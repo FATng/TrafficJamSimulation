@@ -44,10 +44,12 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
    - Tự động bố trí xe trên 3 làn đường theo phương thức so le (staggered).
    - Kiểm tra vật lý OverlapBox trước khi đặt xe, đảm bảo 100% không có xe bị đè hoặc chạm nhau khi xuất phát.
 
-5. **Hệ thống Người qua đường & Phản xạ nhường đường (Pedestrian Crossing & Yielding)**:
-   - **`Pedestrian.prefab`**: Nhân vật 3D người đi bộ hoàn chỉnh với `CapsuleCollider`, `Rigidbody`, `PedestrianAgent` và trang phục màu sắc ngẫu nhiên.
-   - **`PedestrianSpawner`**: Tự động sinh người qua đường định kỳ hoặc thông qua các hàm `SpawnPedestrian()`, `SpawnPedestrianAt(zPosition, fromLeftToRight, walkingSpeed)`.
-   - **Phản xạ nhường đường của xe (`AIFVehicleAgent`)**: Cảm biến đa tia trước phát hiện người đi bộ cắt ngang làn đường từ xa, tự động kích hoạt đèn phanh đỏ rực, giảm tốc dừng hẳn ở cự ly an toàn nhường đường, và tự động tăng tốc trở lại khi người đi bộ đã rời khỏi làn.
+5. **Hệ thống Người qua đường & Bộ não né tránh thông minh (Pedestrian Crossing & Active Evasion)**:
+   - **`Pedestrian.prefab`**: Mô hình người đi bộ dạng khối chữ nhật đơn giản (Box/Cube $0.6m 	imes 1.8m 	imes 0.6m$), tối ưu hiệu năng và vật lý chuẩn xác.
+   - **Raycast chống đâm xe của người đi bộ (`PedestrianAgent`)**: Bắn tia quét phía trước mặt theo hướng di chuyển ($2.5m$). Nếu phát hiện có xe ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe chạy qua, ngăn ngừa hoàn toàn tình trạng người đâm vào xe.
+   - **Raycast chéo hình quạt của xe (Diagonal Fan-out Scan)**: Xe trang bị hệ thống 6 tia quét chéo góc ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$) với tầm quét xa tới $28m$, tính toán thời gian và tọa độ giao cắt dự kiến của người đi bộ đang băng ngang đường từ xa, tránh việc tới sát mũi xe mới phát hiện.
+   - **Bộ não chủ động né người (Active Evasion)**: Khi có góc trống an toàn (làn bên trái hoặc phải không có xe khác), xe chủ động đánh lái lách nhẹ qua phía sau lưng hướng đi của người đi bộ, duy trì tốc độ lướt an toàn ($8-9	ext{ m/s}$) và bật xi nhan né, không bị khựng lại hay phanh chết. Chỉ phanh dừng khi hai bên đều kẹt không thể né.
+   - **Phản xạ tai nạn va chạm**: Khi xảy ra va chạm giữa xe và người, cả hai lập tức chuyển sang màu đỏ rực cảnh báo nguy hiểm và cùng dừng lại hoàn toàn trong 3.5 giây.
 
 6. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
    - **`CarLightsController`**: Điều khiển đèn phanh (đỏ rực khi đạp phanh), xi nhan vàng nhấp nháy khi chuyển làn/bẻ lái, đèn định vị sau.
@@ -107,7 +109,7 @@ TrafficJamSimulation/
 | **`CarLightsController.cs`** | **Hệ thống chiếu sáng** | Tự động kích hoạt đèn phanh đỏ rực khi ga âm hoặc khoảng cách gần, kích hoạt đèn xi nhan vàng nhấp nháy theo tần số khi bẻ lái hoặc chuyển làn ngẫu nhiên. |
 | **`CarCollisionVisualizer.cs`** | **Trực quan hóa tai nạn** | Đổi màu toàn bộ thân xe sang màu đỏ cảnh báo tức thì khi xảy ra va chạm với xe khác hoặc rào chắn, đếm ngược thời gian và phục hồi lại màu xe ban đầu. |
 | **`TrafficFieldManager.cs`** | **Trường mật độ Mean-Field** | Chia tuyến đường thành lưới 50 ô (cells), các xe liên tục đăng ký vị trí để tính toán mật độ cục bộ và tiêu tán mật độ theo thời gian. |
-| **`PedestrianAgent.cs`** | **Người qua đường** | Điều khiển người đi bộ băng ngang lòng đường, xoay mặt theo hướng bước đi (+X/-X), tạo hiệu ứng bước chân nhấp nhô (bobbing), gán bảng màu trang phục ngẫu nhiên và tự giải phóng bộ nhớ khi sang đường xong. |
+| **`PedestrianAgent.cs`** | **Người qua đường (Khối hộp)** | Điều khiển khối người đi bộ băng ngang lòng đường, trang bị Raycast quét xe phía trước mặt để dừng lại tránh đâm vào xe, tự đổi màu đỏ rực và đứng yên 3.5s khi bị đâm, gán màu ngẫu nhiên và tự hủy khi qua đường xong. |
 | **`PedestrianSpawner.cs`** | **Sinh người qua đường** | Tự động sinh người đi bộ định kỳ tại vị trí ngẫu nhiên hoặc các vạch kẻ chỉ định, cung cấp hàm `SpawnPedestrian()` và `SpawnPedestrianAt()` cho phép kích hoạt người qua đường theo kịch bản. |
 | **`EnvironmentSetup.cs`** | **Công cụ Editor** | Menu `Tools` trong Unity Editor: Tự động gắn Tag `Vehicle` & `Pedestrian`, tạo vật liệu, tạo `CarAgent.prefab` & `Pedestrian.prefab`, xây dựng đoạn đường cao tốc 500m có rào chắn 2 bên, cấu hình Spawner và căn chỉnh Camera. |
 

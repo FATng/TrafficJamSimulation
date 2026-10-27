@@ -282,7 +282,7 @@ namespace TrafficJamSimulation.Editor
         [MenuItem("Tools/Create Pedestrian Prefab")]
         public static void CreatePedestrianPrefab()
         {
-            Debug.Log("[EnvironmentSetup] Bắt đầu tạo Pedestrian Prefab...");
+            Debug.Log("[EnvironmentSetup] Bắt đầu tạo Pedestrian Prefab (Khối chữ nhật đơn)...");
             EnsureTagExists("Pedestrian");
 
             if (!AssetDatabase.IsValidFolder(PrefabDirectory))
@@ -290,27 +290,34 @@ namespace TrafficJamSimulation.Editor
                 AssetDatabase.CreateFolder("Assets", "Prefabs");
             }
 
-            GameObject pedObj = new GameObject("Pedestrian");
+            // Tạo khối chữ nhật Cube duy nhất
+            GameObject pedObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            pedObj.name = "Pedestrian";
             pedObj.tag = "Pedestrian";
             pedObj.transform.position = Vector3.zero;
             pedObj.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+            pedObj.transform.localScale = new Vector3(0.6f, 1.8f, 0.6f);
 
-            CapsuleCollider col = pedObj.AddComponent<CapsuleCollider>();
-            col.center = new Vector3(0f, 0.9f, 0f);
-            col.radius = 0.35f;
-            col.height = 1.8f;
-            col.direction = 1;
+            // Cấu hình BoxCollider
+            BoxCollider col = pedObj.GetComponent<BoxCollider>();
+            if (col == null) col = pedObj.AddComponent<BoxCollider>();
+            col.center = Vector3.zero;
+            col.size = Vector3.one;
 
-            Rigidbody rb = pedObj.AddComponent<Rigidbody>();
+            // Cấu hình Rigidbody
+            Rigidbody rb = pedObj.GetComponent<Rigidbody>();
+            if (rb == null) rb = pedObj.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
 
+            // Cấu hình PedestrianAgent
             PedestrianAgent agent = pedObj.AddComponent<PedestrianAgent>();
             agent.walkingSpeed = 1.4f;
             agent.roadWidth = 10f;
             agent.stepFrequency = 4.0f;
             agent.stepBobAmplitude = 0.04f;
 
+            // Vật liệu PedestrianMaterial
             Material pedMat = AssetDatabase.LoadAssetAtPath<Material>(PedestrianMaterialPath);
             if (pedMat == null)
             {
@@ -324,45 +331,8 @@ namespace TrafficJamSimulation.Editor
                 AssetDatabase.SaveAssets();
             }
 
-            // Body
-            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            body.name = "Body";
-            Object.DestroyImmediate(body.GetComponent<Collider>());
-            body.transform.SetParent(pedObj.transform, false);
-            body.transform.localPosition = new Vector3(0f, 1.05f, 0f);
-            body.transform.localScale = new Vector3(0.5f, 0.65f, 0.32f);
-            var bodyRend = body.GetComponent<Renderer>();
-            if (bodyRend != null && pedMat != null) bodyRend.sharedMaterial = pedMat;
-
-            // Head
-            GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            head.name = "Head";
-            Object.DestroyImmediate(head.GetComponent<Collider>());
-            head.transform.SetParent(pedObj.transform, false);
-            head.transform.localPosition = new Vector3(0f, 1.55f, 0f);
-            head.transform.localScale = new Vector3(0.35f, 0.35f, 0.35f);
-            var headRend = head.GetComponent<Renderer>();
-            if (headRend != null && pedMat != null) headRend.sharedMaterial = pedMat;
-
-            // LeftLeg
-            GameObject leftLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            leftLeg.name = "LeftLeg";
-            Object.DestroyImmediate(leftLeg.GetComponent<Collider>());
-            leftLeg.transform.SetParent(pedObj.transform, false);
-            leftLeg.transform.localPosition = new Vector3(-0.13f, 0.36f, 0f);
-            leftLeg.transform.localScale = new Vector3(0.18f, 0.72f, 0.24f);
-            var leftLegRend = leftLeg.GetComponent<Renderer>();
-            if (leftLegRend != null && pedMat != null) leftLegRend.sharedMaterial = pedMat;
-
-            // RightLeg
-            GameObject rightLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            rightLeg.name = "RightLeg";
-            Object.DestroyImmediate(rightLeg.GetComponent<Collider>());
-            rightLeg.transform.SetParent(pedObj.transform, false);
-            rightLeg.transform.localPosition = new Vector3(0.13f, 0.36f, 0f);
-            rightLeg.transform.localScale = new Vector3(0.18f, 0.72f, 0.24f);
-            var rightLegRend = rightLeg.GetComponent<Renderer>();
-            if (rightLegRend != null && pedMat != null) rightLegRend.sharedMaterial = pedMat;
+            var rend = pedObj.GetComponent<Renderer>();
+            if (rend != null && pedMat != null) rend.sharedMaterial = pedMat;
 
             PrefabUtility.SaveAsPrefabAsset(pedObj, PedestrianPrefabPath);
             Object.DestroyImmediate(pedObj);

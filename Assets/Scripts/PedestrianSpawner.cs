@@ -39,7 +39,7 @@ namespace TrafficJamSimulation
         public float maxSpawnZ = 450f;
 
         [Tooltip("Cao độ sàn xuất phát (m)")]
-        public float spawnHeightY = 0.0f;
+        public float spawnHeightY = 0.9f;
 
         [Header("Speed Settings")]
         [Tooltip("Tốc độ đi bộ tối thiểu (m/s)")]
