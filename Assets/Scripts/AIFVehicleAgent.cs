@@ -410,6 +410,17 @@ public class AIFVehicleAgent : MonoBehaviour
             }
         }
 
+        // Quét phía sau làn hiện tại để kiểm tra xe sau bám gần
+        float distOwnLaneBehind = 50f;
+        Vector3 ownRearOrigin = carCenter - transform.forward * 2.0f;
+        if (Physics.Raycast(ownRearOrigin, -transform.forward, out RaycastHit hitOwnBehind, 25f))
+        {
+            if (hitOwnBehind.collider.gameObject != gameObject && (hitOwnBehind.collider.CompareTag("Vehicle") || hitOwnBehind.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+            {
+                distOwnLaneBehind = hitOwnBehind.distance;
+            }
+        }
+
         // Thông số xe phía trước & vận tốc tiếp cận (Closing Speed)
         float leaderSpeed = 0f;
         bool isLeaderStopped = false;
@@ -461,6 +472,27 @@ public class AIFVehicleAgent : MonoBehaviour
                           (distRightLaneBehind > 5.0f) &&
                           (currentPosX < 3.2f);
 
+        // ĐIỀU KIỆN CHỦ ĐỘNG NÉ NGƯỜI QUA ĐƯỜNG:
+        // Chỉ chủ động né khi phía trước và phía sau không có xe khác ở gần.
+        // Nếu có xe khác thì tuyệt đối không tùy tiện lách làn mà ưu tiên dừng lại nhường đường.
+        bool isOwnLaneIsolated = (frontVehicleObj == null || distanceToFront >= 14.0f) && (distOwnLaneBehind >= 10.0f);
+
+        bool isLeftLaneSafeForPedEvade = (currentLaneIndex > 0) &&
+                                        (distToCarLeft >= 1.0f) &&
+                                        !hasCarOnLeftFrontDiag &&
+                                        (distLeftLaneAhead >= 14.0f) &&
+                                        (distLeftLaneBehind >= 10.0f) &&
+                                        (currentPosX > -3.2f);
+
+        bool isRightLaneSafeForPedEvade = (currentLaneIndex < 2) &&
+                                         (distToCarRight >= 1.0f) &&
+                                         !hasCarOnRightFrontDiag &&
+                                         (distRightLaneAhead >= 14.0f) &&
+                                         (distRightLaneBehind >= 10.0f) &&
+                                         (currentPosX < 3.2f);
+
+        bool canEvadePedestrian = isOwnLaneIsolated && (isLeftLaneSafeForPedEvade || isRightLaneSafeForPedEvade);
+
         bool hasPedestrianObstacle = (isPedestrianInPath && nearestPedDist < 26.0f);
         bool hasStoppedVehicleObstacle = (frontVehicleObj != null && isLeaderStopped && distanceToFront < 18.0f);
         bool hasSlowVehicleObstacle = (frontVehicleObj != null && !isLeaderStopped && distanceToFront < 14.0f && leaderSpeed < effectiveTargetSpeed * 0.70f);
@@ -473,34 +505,80 @@ public class AIFVehicleAgent : MonoBehaviour
             {
                 if (hasPedestrianObstacle)
                 {
-                    // Né tránh người đi bộ: ưu tiên lách ra sau lưng hướng đi của người
-                    if (nearestPedDir > 0 && canGoLeft)
+                    // 1. Chỉ chủ động né người qua đường khi phía trước và phía sau không có xe khác ở gần
+                    if (canEvadePedestrian)
                     {
-                        targetLaneIndex = currentLaneIndex - 1;
-                        targetLaneX = laneCenters[targetLaneIndex];
-                        isChangingLane = true;
-                        laneChangeCooldownTimer = 2.5f;
+                        float pedWorldX = transform.position.x + nearestPedRelX;
+                        bool chosenLaneFound = false;
+                        int chosenTargetLane = currentLaneIndex;
+
+                        // 2. KHI KHOẢNG TRỐNG TRƯỚC MẶT NGƯỜI QUA ĐƯỜNG ĐỦ RỘNG (>= 2.5m):
+                        // Xe có thể tránh bằng cách đi qua TRƯỚC MẶT người qua đường!
+                        if (nearestPedDir > 0 && isRightLaneSafeForPedEvade)
+                        {
+                            // Người đi sang phải (+X), trước mặt người là làn phải
+                            float gapInFront = laneCenters[currentLaneIndex + 1] - pedWorldX;
+                            if (gapInFront >= 2.5f)
+                            {
+                                chosenTargetLane = currentLaneIndex + 1;
+                                chosenLaneFound = true;
+                            }
+                        }
+                        else if (nearestPedDir < 0 && isLeftLaneSafeForPedEvade)
+                        {
+                            // Người đi sang trái (-X), trước mặt người là làn trái
+                            float gapInFront = pedWorldX - laneCenters[currentLaneIndex - 1];
+                            if (gapInFront >= 2.5f)
+                            {
+                                chosenTargetLane = currentLaneIndex - 1;
+                                chosenLaneFound = true;
+                            }
+                        }
+
+                        // 3. Nếu khoảng trống trước mặt không đủ rộng, kiểm tra lách qua SAU LƯNG người đi bộ
+                        if (!chosenLaneFound)
+                        {
+                            if (nearestPedDir > 0 && isLeftLaneSafeForPedEvade)
+                            {
+                                // Người đi sang phải (+X), sau lưng là làn trái
+                                float gapBehind = pedWorldX - laneCenters[currentLaneIndex - 1];
+                                if (gapBehind >= 0.8f)
+                                {
+                                    chosenTargetLane = currentLaneIndex - 1;
+                                    chosenLaneFound = true;
+                                }
+                            }
+                            else if (nearestPedDir < 0 && isRightLaneSafeForPedEvade)
+                            {
+                                // Người đi sang trái (-X), sau lưng là làn phải
+                                float gapBehind = laneCenters[currentLaneIndex + 1] - pedWorldX;
+                                if (gapBehind >= 0.8f)
+                                {
+                                    chosenTargetLane = currentLaneIndex + 1;
+                                    chosenLaneFound = true;
+                                }
+                            }
+                        }
+
+                        if (chosenLaneFound)
+                        {
+                            targetLaneIndex = chosenTargetLane;
+                            targetLaneX = laneCenters[targetLaneIndex];
+                            isChangingLane = true;
+                            laneChangeCooldownTimer = 2.5f;
+                        }
+                        else
+                        {
+                            // Không có khoảng trống né an toàn: Giữ nguyên làn để dừng lại nhường đường
+                            targetLaneIndex = currentLaneIndex;
+                            targetLaneX = laneCenters[currentLaneIndex];
+                        }
                     }
-                    else if (nearestPedDir < 0 && canGoRight)
+                    else
                     {
-                        targetLaneIndex = currentLaneIndex + 1;
-                        targetLaneX = laneCenters[targetLaneIndex];
-                        isChangingLane = true;
-                        laneChangeCooldownTimer = 2.5f;
-                    }
-                    else if (canGoLeft)
-                    {
-                        targetLaneIndex = currentLaneIndex - 1;
-                        targetLaneX = laneCenters[targetLaneIndex];
-                        isChangingLane = true;
-                        laneChangeCooldownTimer = 2.5f;
-                    }
-                    else if (canGoRight)
-                    {
-                        targetLaneIndex = currentLaneIndex + 1;
-                        targetLaneX = laneCenters[targetLaneIndex];
-                        isChangingLane = true;
-                        laneChangeCooldownTimer = 2.5f;
+                        // NẾU CÓ XE KHÁC Ở GẦN (TRƯỚC HOẶC SAU): ƯU TIÊN DỪNG LẠI, KHÔNG CHỦ ĐỘNG LÁCH LÀN
+                        targetLaneIndex = currentLaneIndex;
+                        targetLaneX = laneCenters[currentLaneIndex];
                     }
                 }
                 else
@@ -585,20 +663,33 @@ public class AIFVehicleAgent : MonoBehaviour
         {
             if (isChangingLane)
             {
+                // Khi đang lách né, duy trì tốc độ an toàn vừa phải
                 float safeEvasionSpeed = Mathf.Min(effectiveTargetSpeed, 8.5f);
                 throttle = (currentSpeed > safeEvasionSpeed) ? -0.2f : 0.3f;
+                // Nếu cự ly tới người quá gần (< 3.0m), phanh hãm lại tránh va chạm
+                if (nearestPedDist < 3.0f)
+                {
+                    throttle = -1.0f;
+                    currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, 15.0f * dt);
+                }
             }
             else
             {
-                float safeStopGap = 4.0f + (currentSpeed * 0.7f);
+                // ƯU TIÊN DỪNG LẠI NHƯỜNG NGƯỜI ĐI BỘ (khi có xe gần hoặc không thể né an toàn)
+                float safeStopGap = 4.5f + (currentSpeed * 0.7f);
                 if (nearestPedDist > safeStopGap)
                 {
                     float gapRatio = (nearestPedDist - safeStopGap) / safeStopGap;
-                    throttle = Mathf.Clamp(gapRatio * 0.5f - 0.5f, -1.0f, 0.1f);
+                    throttle = Mathf.Clamp(gapRatio * 0.5f - 0.5f, -1.0f, 0.05f);
                 }
                 else
                 {
                     throttle = -1.0f; // Phanh đứng lại nhường người đi bộ
+                    if (lightsController != null) lightsController.SetBraking(true);
+                    if (nearestPedDist < 4.0f)
+                    {
+                        currentSpeed = Mathf.MoveTowards(currentSpeed, 0f, 20.0f * dt);
+                    }
                 }
             }
         }

@@ -56,7 +56,11 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
    - **`Pedestrian.prefab`**: Mô hình người đi bộ dạng khối chữ nhật đơn giản (Box/Cube $0.6m 	imes 1.8m 	imes 0.6m$), tối ưu hiệu năng và vật lý chuẩn xác.
    - **Raycast chống đâm xe của người đi bộ (`PedestrianAgent`)**: Bắn tia quét phía trước mặt theo hướng di chuyển ($2.5m$). Nếu phát hiện có xe ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe chạy qua, ngăn ngừa hoàn toàn tình trạng người đâm vào xe.
    - **Raycast chéo hình quạt của xe (Diagonal Fan-out Scan)**: Xe trang bị hệ thống 6 tia quét chéo góc ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$) với tầm quét xa tới $28m$, tính toán thời gian và tọa độ giao cắt dự kiến của người đi bộ đang băng ngang đường từ xa, tránh việc tới sát mũi xe mới phát hiện.
-   - **Bộ não chủ động né người (Active Evasion)**: Khi có góc trống an toàn (làn bên trái hoặc phải không có xe khác), xe chủ động đánh lái lách nhẹ qua phía sau lưng hướng đi của người đi bộ, duy trì tốc độ lướt an toàn ($8-10	ext{ m/s}$) và bật xi nhan né, không bị khựng lại hay phanh chết. Chỉ phanh dừng khi hai bên đều kẹt không thể né.
+   - **Bộ não né tránh có điều kiện & Ưu tiên dừng lại nhường đường (Conditional Evasion & Safe Yielding)**:
+     - **Chỉ chủ động né khi phía trước và phía sau không có xe khác ở gần**: Xe quét kiểm tra cả làn hiện tại và làn lân cận. Nếu có xe bám gần phía trước (< 14m) hoặc phía sau (< 10m), xe **tuyệt đối không chuyển làn đột ngột mà ưu tiên phanh dừng nhường đường** an toàn trước người đi bộ, bật đèn phanh cảnh báo xe sau.
+     - **Lách qua trước mặt người qua đường khi khoảng trống đủ rộng**: Khi khoảng cách giữa vị trí người đi bộ và làn mục tiêu phía trước mặt họ đạt từ >= 2.5m trở lên (người chưa tới gần làn), xe chủ động lách qua **trước mặt người đi bộ** để vượt qua thông suốt.
+     - **Lách qua sau lưng người đi bộ**: Nếu khoảng trống trước mặt không đủ rộng, xe ưu tiên lách ra sau lưng người đi bộ khi khoảng hở an toàn (>= 0.8m).
+     - Nếu cả 2 hướng lách đều bị chắn hoặc không đủ an toàn, xe phanh đứng yên cách người 4.5m và chờ người băng qua xong mới tiếp tục di chuyển.
    - **Triệt tiêu hiện tượng kéo/dính theo nhau (Physics Decoupling & Zero Friction)**:
      - Khi xảy ra va chạm giữa người và xe, hệ thống lập tức kích hoạt `Physics.IgnoreCollision` tạm thời giữa toàn bộ Collider của xe và người, đồng thời áp dụng `PhysicsMaterial` triệt tiêu ma sát ($0$ friction).
      - Khi tiếp tục di chuyển, người đi bộ và xe hoàn toàn không bị kéo rê, đẩy dạt hoặc bám dính vào nhau.
