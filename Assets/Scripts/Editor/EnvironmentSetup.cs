@@ -13,6 +13,8 @@ namespace TrafficJamSimulation.Editor
         private const string CarBodyMaterialPath = "Assets/Materials/CarBodyMaterial.mat";
         private const string PrefabDirectory = "Assets/Prefabs";
         private const string CarAgentPrefabPath = "Assets/Prefabs/CarAgent.prefab";
+        private const string PedestrianPrefabPath = "Assets/Prefabs/Pedestrian.prefab";
+        private const string PedestrianMaterialPath = "Assets/Materials/PedestrianMaterial.mat";
         private const string OnnxModelPath = "Assets/Models/traffic_aif_agent.onnx";
 
         [MenuItem("Tools/Create CarAgent Prefab")]
@@ -167,8 +169,9 @@ namespace TrafficJamSimulation.Editor
         {
             Debug.Log("[EnvironmentSetup] Bắt đầu thiết lập môi trường đường sá...");
 
-            // 1. Đảm bảo Tag 'Vehicle' đã được đăng ký
+            // 1. Đảm bảo Tag 'Vehicle' và 'Pedestrian' đã được đăng ký
             EnsureTagExists("Vehicle");
+            EnsureTagExists("Pedestrian");
 
             // 2. Tạo hoặc mở Scene
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
@@ -242,6 +245,20 @@ namespace TrafficJamSimulation.Editor
             spawner.spawnHeightY = 0.5f;
             spawner.checkPhysicsOverlap = true;
 
+            // 5b. Thêm PedestrianSpawner để mô phỏng người qua đường
+            var pedSpawner = trafficSystem.AddComponent<PedestrianSpawner>();
+            var pedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PedestrianPrefabPath);
+            if (pedPrefab == null)
+            {
+                CreatePedestrianPrefab();
+                pedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PedestrianPrefabPath);
+            }
+            pedSpawner.pedestrianPrefab = pedPrefab;
+            pedSpawner.autoSpawn = true;
+            pedSpawner.roadWidth = 10f;
+            pedSpawner.minSpawnZ = 40f;
+            pedSpawner.maxSpawnZ = 450f;
+
             // 6. Bước 5: Căn chỉnh Camera chính để quan sát bao quát từ trên cao xuống
             Camera mainCam = Camera.main;
             if (mainCam != null)
@@ -260,6 +277,99 @@ namespace TrafficJamSimulation.Editor
 
             AssetDatabase.Refresh();
             Debug.Log("[EnvironmentSetup] Thiết lập môi trường hoàn tất thành công!");
+        }
+
+        [MenuItem("Tools/Create Pedestrian Prefab")]
+        public static void CreatePedestrianPrefab()
+        {
+            Debug.Log("[EnvironmentSetup] Bắt đầu tạo Pedestrian Prefab...");
+            EnsureTagExists("Pedestrian");
+
+            if (!AssetDatabase.IsValidFolder(PrefabDirectory))
+            {
+                AssetDatabase.CreateFolder("Assets", "Prefabs");
+            }
+
+            GameObject pedObj = new GameObject("Pedestrian");
+            pedObj.tag = "Pedestrian";
+            pedObj.transform.position = Vector3.zero;
+            pedObj.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+
+            CapsuleCollider col = pedObj.AddComponent<CapsuleCollider>();
+            col.center = new Vector3(0f, 0.9f, 0f);
+            col.radius = 0.35f;
+            col.height = 1.8f;
+            col.direction = 1;
+
+            Rigidbody rb = pedObj.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+
+            PedestrianAgent agent = pedObj.AddComponent<PedestrianAgent>();
+            agent.walkingSpeed = 1.4f;
+            agent.roadWidth = 10f;
+            agent.stepFrequency = 4.0f;
+            agent.stepBobAmplitude = 0.04f;
+
+            Material pedMat = AssetDatabase.LoadAssetAtPath<Material>(PedestrianMaterialPath);
+            if (pedMat == null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                pedMat = new Material(shader)
+                {
+                    name = "PedestrianMaterial",
+                    color = new Color(0.95f, 0.72f, 0.12f, 1f)
+                };
+                AssetDatabase.CreateAsset(pedMat, PedestrianMaterialPath);
+                AssetDatabase.SaveAssets();
+            }
+
+            // Body
+            GameObject body = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            body.name = "Body";
+            Object.DestroyImmediate(body.GetComponent<Collider>());
+            body.transform.SetParent(pedObj.transform, false);
+            body.transform.localPosition = new Vector3(0f, 1.05f, 0f);
+            body.transform.localScale = new Vector3(0.5f, 0.65f, 0.32f);
+            var bodyRend = body.GetComponent<Renderer>();
+            if (bodyRend != null && pedMat != null) bodyRend.sharedMaterial = pedMat;
+
+            // Head
+            GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            head.name = "Head";
+            Object.DestroyImmediate(head.GetComponent<Collider>());
+            head.transform.SetParent(pedObj.transform, false);
+            head.transform.localPosition = new Vector3(0f, 1.55f, 0f);
+            head.transform.localScale = new Vector3(0.35f, 0.35f, 0.35f);
+            var headRend = head.GetComponent<Renderer>();
+            if (headRend != null && pedMat != null) headRend.sharedMaterial = pedMat;
+
+            // LeftLeg
+            GameObject leftLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            leftLeg.name = "LeftLeg";
+            Object.DestroyImmediate(leftLeg.GetComponent<Collider>());
+            leftLeg.transform.SetParent(pedObj.transform, false);
+            leftLeg.transform.localPosition = new Vector3(-0.13f, 0.36f, 0f);
+            leftLeg.transform.localScale = new Vector3(0.18f, 0.72f, 0.24f);
+            var leftLegRend = leftLeg.GetComponent<Renderer>();
+            if (leftLegRend != null && pedMat != null) leftLegRend.sharedMaterial = pedMat;
+
+            // RightLeg
+            GameObject rightLeg = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rightLeg.name = "RightLeg";
+            Object.DestroyImmediate(rightLeg.GetComponent<Collider>());
+            rightLeg.transform.SetParent(pedObj.transform, false);
+            rightLeg.transform.localPosition = new Vector3(0.13f, 0.36f, 0f);
+            rightLeg.transform.localScale = new Vector3(0.18f, 0.72f, 0.24f);
+            var rightLegRend = rightLeg.GetComponent<Renderer>();
+            if (rightLegRend != null && pedMat != null) rightLegRend.sharedMaterial = pedMat;
+
+            PrefabUtility.SaveAsPrefabAsset(pedObj, PedestrianPrefabPath);
+            Object.DestroyImmediate(pedObj);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"[EnvironmentSetup] Đã tạo thành công Prefab tại: {PedestrianPrefabPath}");
         }
 
         private static void EnsureTagExists(string tagName)

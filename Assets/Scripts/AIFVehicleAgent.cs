@@ -179,6 +179,7 @@ public class AIFVehicleAgent : MonoBehaviour
         isFrontCarBraking = false;
         frontCarTurnSignal = TurnSignal.None;
         GameObject frontVehicleObj = null;
+        bool isPedestrianAhead = false;
 
         float[] rayOffsetsX = new float[] { 0f, -0.65f, 0.65f };
         Vector3 baseRayOrigin = new Vector3(transform.position.x, fixedHeightY, transform.position.z) + transform.forward * 2.05f;
@@ -188,12 +189,19 @@ public class AIFVehicleAgent : MonoBehaviour
             Vector3 origin = baseRayOrigin + transform.right * rayOffsetsX[r];
             if (Physics.Raycast(origin, transform.forward, out RaycastHit hit, 50f))
             {
-                if (hit.collider.gameObject != gameObject && (hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                if (hit.collider.gameObject != gameObject)
                 {
-                    if (hit.distance < distanceToFront)
+                    bool isVehicle = hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
+                    bool isPed = hit.collider.CompareTag("Pedestrian") || hit.collider.GetComponentInParent<PedestrianAgent>() != null;
+
+                    if (isVehicle || isPed)
                     {
-                        distanceToFront = hit.distance;
-                        frontVehicleObj = hit.collider.gameObject;
+                        if (hit.distance < distanceToFront)
+                        {
+                            distanceToFront = hit.distance;
+                            frontVehicleObj = hit.collider.gameObject;
+                            isPedestrianAhead = isPed;
+                        }
                     }
                 }
             }
@@ -352,6 +360,7 @@ public class AIFVehicleAgent : MonoBehaviour
 
             if (isFrontCarBraking) desiredGap += Mathf.Max(3.0f, currentSpeed * 0.45f);
             if (frontCarTurnSignal != TurnSignal.None) desiredGap += 1.5f;
+            if (isPedestrianAhead) desiredGap += 4.0f; // Luôn giữ cự ly an toàn đặc biệt với người đi bộ
 
             if (distanceToFront > desiredGap)
             {
@@ -362,13 +371,14 @@ public class AIFVehicleAgent : MonoBehaviour
             else
             {
                 // Đã vào vùng cần giảm tốc: hãm phanh êm ái
-                throttle = Mathf.Clamp((distanceToFront - desiredGap) / Mathf.Max(2.5f, desiredGap * 0.4f), -0.85f, 0f);
+                float minThrottle = isPedestrianAhead ? -1.0f : -0.85f;
+                throttle = Mathf.Clamp((distanceToFront - desiredGap) / Mathf.Max(2.5f, desiredGap * 0.4f), minThrottle, 0f);
             }
 
-            // Phản xạ thị giác đón trước: Xe trước đang phanh đỏ ở cự ly gần
-            if (isFrontCarBraking && distanceToFront < desiredGap * 1.25f)
+            // Phản xạ thị giác đón trước: Xe trước đang phanh đỏ hoặc người đi bộ ở cự ly gần
+            if ((isFrontCarBraking || isPedestrianAhead) && distanceToFront < desiredGap * 1.35f)
             {
-                throttle = Mathf.Min(throttle, -0.6f);
+                throttle = Mathf.Min(throttle, -0.7f);
             }
         }
 
@@ -661,6 +671,14 @@ public class AIFVehicleAgent : MonoBehaviour
         if (Time.time - spawnTime < 1.0f) return;
 
         GameObject other = collision.gameObject;
+
+        // Xử lý an toàn khi va chạm với người đi bộ
+        if (other.CompareTag("Pedestrian") || other.GetComponentInParent<PedestrianAgent>() != null)
+        {
+            currentSpeed = 0f;
+            if (lightsController != null) lightsController.SetBraking(true);
+            return;
+        }
 
         // 1. VA CHẠM GIỮA 2 XE -> CẢ HAI XE LẬP TỨC CHUYỂN ĐỎ & TÁCH NHAU RA VỪA ĐỦ
         if (other.CompareTag("Vehicle") || other.GetComponentInParent<AIFVehicleAgent>() != null || other.GetComponentInParent<CarCollisionVisualizer>() != null)

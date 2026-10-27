@@ -44,11 +44,16 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
    - Tự động bố trí xe trên 3 làn đường theo phương thức so le (staggered).
    - Kiểm tra vật lý OverlapBox trước khi đặt xe, đảm bảo 100% không có xe bị đè hoặc chạm nhau khi xuất phát.
 
-5. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
+5. **Hệ thống Người qua đường & Phản xạ nhường đường (Pedestrian Crossing & Yielding)**:
+   - **`Pedestrian.prefab`**: Nhân vật 3D người đi bộ hoàn chỉnh với `CapsuleCollider`, `Rigidbody`, `PedestrianAgent` và trang phục màu sắc ngẫu nhiên.
+   - **`PedestrianSpawner`**: Tự động sinh người qua đường định kỳ hoặc thông qua các hàm `SpawnPedestrian()`, `SpawnPedestrianAt(zPosition, fromLeftToRight, walkingSpeed)`.
+   - **Phản xạ nhường đường của xe (`AIFVehicleAgent`)**: Cảm biến đa tia trước phát hiện người đi bộ cắt ngang làn đường từ xa, tự động kích hoạt đèn phanh đỏ rực, giảm tốc dừng hẳn ở cự ly an toàn nhường đường, và tự động tăng tốc trở lại khi người đi bộ đã rời khỏi làn.
+
+6. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
    - **`CarLightsController`**: Điều khiển đèn phanh (đỏ rực khi đạp phanh), xi nhan vàng nhấp nháy khi chuyển làn/bẻ lái, đèn định vị sau.
    - **`CarCollisionVisualizer`**: Khi 2 xe va chạm hoặc va vào rào chắn, cả 2 xe lập tức đổi sang màu đỏ rực cảnh báo va chạm và tự phục hồi màu sau vài giây.
 
-6. **Thiết lập tự động một chạm (`EnvironmentSetup`)**:
+7. **Thiết lập tự động một chạm (`EnvironmentSetup`)**:
    - Bộ công cụ Unity Editor Menu (`Tools -> Setup Road Environment`, `Tools -> Create CarAgent Prefab`) giúp tái tạo toàn bộ Scene mô phỏng chỉ với một cú nhấp chuột.
 
 ---
@@ -60,6 +65,7 @@ TrafficJamSimulation/
 ├── Assets/
 │   ├── Materials/
 │   │   ├── CarBodyMaterial.mat         # Vật liệu sơn thân xe (hỗ trợ MaterialPropertyBlock đổi màu)
+│   │   ├── PedestrianMaterial.mat      # Vật liệu trang phục người đi bộ qua đường
 │   │   ├── RoadMaterial.mat            # Vật liệu nhựa đường cao tốc và rào chắn
 │   │   └── TailLightMaterial.mat       # Vật liệu đèn hậu xe (hỗ trợ phát xạ Emission)
 │   ├── Models/
@@ -67,11 +73,14 @@ TrafficJamSimulation/
 │   │   └── README.md                   # Hướng dẫn định dạng Input/Output của mô hình AI
 │   ├── Prefabs/
 │   │   ├── CarAgent.prefab             # Prefab hoàn chỉnh của xe (RigidBody, Agent, Đèn, Visualizer)
+│   │   ├── Pedestrian.prefab           # Prefab hoàn chỉnh người đi bộ qua đường (Collider, Agent, Body)
 │   │   └── README.md                   # Hướng dẫn tạo Prefab xe tiêu chuẩn
 │   ├── Scenes/
 │   │   └── TrafficSimulationScene.unity# Scene demo mô phỏng cao tốc 3 làn đường dài 500m
 │   └── Scripts/
 │       ├── AIFVehicleAgent.cs          # [QUAN TRỌNG] Bộ não điều khiển hành vi xe thông minh (AI + Phản xạ)
+│       ├── PedestrianAgent.cs          # Điều khiển hành vi người đi bộ qua đường (bước chân, hướng đi, tự hủy)
+│       ├── PedestrianSpawner.cs        # Trình sinh người qua đường tự động hoặc theo vị trí chỉ định
 │       ├── VehicleAgent.cs             # Bộ điều khiển xe theo thuật toán cổ điển IDM (Benchmark)
 │       ├── TrafficInferenceEngine.cs   # Trình quản lý nạp và suy luận mô hình ONNX qua Sentis
 │       ├── TrafficSpawner.cs           # Script sinh đoàn xe đa làn so le, chống chồng lấn
@@ -98,7 +107,9 @@ TrafficJamSimulation/
 | **`CarLightsController.cs`** | **Hệ thống chiếu sáng** | Tự động kích hoạt đèn phanh đỏ rực khi ga âm hoặc khoảng cách gần, kích hoạt đèn xi nhan vàng nhấp nháy theo tần số khi bẻ lái hoặc chuyển làn ngẫu nhiên. |
 | **`CarCollisionVisualizer.cs`** | **Trực quan hóa tai nạn** | Đổi màu toàn bộ thân xe sang màu đỏ cảnh báo tức thì khi xảy ra va chạm với xe khác hoặc rào chắn, đếm ngược thời gian và phục hồi lại màu xe ban đầu. |
 | **`TrafficFieldManager.cs`** | **Trường mật độ Mean-Field** | Chia tuyến đường thành lưới 50 ô (cells), các xe liên tục đăng ký vị trí để tính toán mật độ cục bộ và tiêu tán mật độ theo thời gian. |
-| **`EnvironmentSetup.cs`** | **Công cụ Editor** | Menu `Tools` trong Unity Editor: Tự động gắn Tag `Vehicle`, tạo vật liệu, tạo `CarAgent.prefab`, xây dựng đoạn đường cao tốc 500m có rào chắn 2 bên và căn chỉnh Camera góc nhìn trên cao. |
+| **`PedestrianAgent.cs`** | **Người qua đường** | Điều khiển người đi bộ băng ngang lòng đường, xoay mặt theo hướng bước đi (+X/-X), tạo hiệu ứng bước chân nhấp nhô (bobbing), gán bảng màu trang phục ngẫu nhiên và tự giải phóng bộ nhớ khi sang đường xong. |
+| **`PedestrianSpawner.cs`** | **Sinh người qua đường** | Tự động sinh người đi bộ định kỳ tại vị trí ngẫu nhiên hoặc các vạch kẻ chỉ định, cung cấp hàm `SpawnPedestrian()` và `SpawnPedestrianAt()` cho phép kích hoạt người qua đường theo kịch bản. |
+| **`EnvironmentSetup.cs`** | **Công cụ Editor** | Menu `Tools` trong Unity Editor: Tự động gắn Tag `Vehicle` & `Pedestrian`, tạo vật liệu, tạo `CarAgent.prefab` & `Pedestrian.prefab`, xây dựng đoạn đường cao tốc 500m có rào chắn 2 bên, cấu hình Spawner và căn chỉnh Camera. |
 
 ---
 
@@ -228,6 +239,55 @@ Mô hình AI điều khiển tăng/giảm tốc được nạp thông qua Unity 
   3. `relativeVelocity`: Vận tốc tương đối ($v_{leader} - v_{current}$, chuẩn hóa chia cho $15.0\text{ m/s}$).
 - **Output Tensor `[1, 1]`**:
   - `acceleration`: Giá trị gia tốc dự đoán $a \in [-6.0, +3.0]\text{ m/s}^2$.
+
+---
+
+---
+
+## 🚶‍♂️ Hướng dẫn sử dụng Hệ thống Người qua đường (Pedestrian Spawner)
+
+### 1. Prefab Người qua đường (`Pedestrian.prefab`):
+- Nằm tại: `Assets/Prefabs/Pedestrian.prefab` (Tag: `Pedestrian`).
+- Được gắn script [`PedestrianAgent.cs`](file:///E:/Unity%20Prj/TrafficJamSimulation/Assets/Scripts/PedestrianAgent.cs), tự động bước qua đường với tốc độ cấu hình (mặc định $1.4	ext{ m/s}$), có nhịp bước chân nhấp nhô sinh động và tự động hủy sau khi bước lên lề bên kia.
+
+### 2. Các hàm sinh người qua đường bằng mã C#:
+Bạn có thể tham chiếu tới `PedestrianSpawner` trong Scene để gọi sinh người qua đường bất cứ lúc nào:
+
+```csharp
+using TrafficJamSimulation;
+using UnityEngine;
+
+public class TrafficScenarioController : MonoBehaviour
+{
+    [SerializeField] private PedestrianSpawner pedestrianSpawner;
+
+    void Update()
+    {
+        // Nhấn phím P: Sinh 1 người qua đường tại vị trí ngẫu nhiên
+        if (Input.GetKeyDown(KeyCode.P))
+        {
+            GameObject ped = pedestrianSpawner.SpawnPedestrian();
+            Debug.Log($"Đã sinh người qua đường tại: {ped.transform.position}");
+        }
+
+        // Nhấn phím C: Sinh người qua đường tại vị trí cố định Z = 120m, đi từ trái sang phải với tốc độ 1.5 m/s
+        if (Input.GetKeyDown(KeyCode.C))
+        {
+            pedestrianSpawner.SpawnPedestrianAt(
+                zPosition: 120f,
+                fromLeftToRight: true,
+                walkingSpeed: 1.5f
+            );
+        }
+
+        // Nhấn phím X: Xóa sạch toàn bộ người qua đường hiện có
+        if (Input.GetKeyDown(KeyCode.X))
+        {
+            pedestrianSpawner.ClearAllPedestrians();
+        }
+    }
+}
+```
 
 ---
 
