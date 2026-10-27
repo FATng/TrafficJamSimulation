@@ -439,12 +439,8 @@ public class AIFVehicleAgent : MonoBehaviour
         }
 
         float steering = isEvadingPedestrian && Mathf.Abs(pedEvasionSteer) > 0.01f ? pedEvasionSteer : sideEvasionSteer;
+        float throttle = 0f;
 
-        // -----------------------------------------------------------------------------------
-        // 3. ĐIỀU KHIỂN GA VÀ LÁI:
-        // - Khi KHÔNG có xe phía trước: ĐI THẲNG TUYỆT ĐỐI (trừ khi né sườn), không lảo đảo, không dừng đột ngột
-        // - Khi CÓ xe phía trước: Bám đuôi mượt mà và phanh an toàn
-        // -----------------------------------------------------------------------------------
         // -----------------------------------------------------------------------------------
         // 3. ĐIỀU KHIỂN GA VÀ PHANH:
         // - Khi có người đi bộ và ĐANG NÉ ĐƯỢC: Duy trì tốc độ lướt an toàn (~8-9 m/s), không phanh chết
