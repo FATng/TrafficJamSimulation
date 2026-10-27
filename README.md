@@ -28,20 +28,19 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
 
 1. **Bộ não điều khiển xe thông minh (`AIFVehicleAgent`)**:
    - Tích hợp mạng nơ-ron sâu định dạng **ONNX** chạy trực tiếp trong Unity qua **Unity Sentis**.
-   - **Hệ thống Cảm biến Quang học Đa hướng Toàn diện (Omnidirectional Perception Raycasts)**:
-     - **Chùm 9 tia cản trước + 2 tia góc nhẹ (±6°)**: Phủ kín toàn bộ cản trước $1.8\text{m}$ với tầm quét xa tới $60\text{m}$, nhận diện xe trước và người đi bộ ở mọi góc tiếp cận.
-     - **8 tia chéo hình quạt đón đầu (±15°, ±30°, ±45°, ±60°)**: Tầm quét $30\text{m}$, phát hiện sớm người cắt ngang đường và xe nhập làn.
-     - **Cảm biến làn lân cận (Parallel Lane Lookahead)**: Bắn tia quét trước ($35\text{m}$) và quét sau / điểm mù ($22\text{m}$) trên làn Trái và Phải, đảm bảo $100\%$ không bao giờ chuyển làn tạt đầu hoặc đâm vào xe khác.
-     - **4 điểm quét sườn xe mỗi bên**: Quét dọc thân xe ($Z = \pm 1.8\text{m}, \pm 0.6\text{m}$), phát hiện xe chạy song song sát sườn và đẩy né nhẹ nhàng.
-     - **Trực quan hóa Raycast (Gizmos Debug)**: Hỗ trợ `OnDrawGizmosSelected` hiển thị đầy đủ chùm tia trực quan trong cửa sổ Scene khi chọn xe.
-   - **Khắc phục triệt để lỗi xe dừng khi xe trước ở xa & chống đâm va (IDM Car-Following)**:
-     - Phân định rõ ràng: Xe chỉ dừng lại khi gặp chướng ngại vật tĩnh (xe chết máy $< 2.0\text{m/s}$ hoặc người qua đường).
-     - Khi xe phía trước đang di chuyển bình thường, xe sau **DUY TRÌ TỐC ĐỘ BÁM ĐUÔI THEO IDM**, tăng ga theo cự ly an toàn, tuyệt đối không bị phanh chết hay đứng sững lại dù xe trước ở xa.
-     - Tính toán khoảng cách an toàn động theo vận tốc tiếp cận (Closing Speed $\Delta v$): $s^*(v, \Delta v) = s_0 + v \cdot T + \frac{v \cdot \Delta v}{2\sqrt{a \cdot b}}$. Hãm phanh mượt mà từ xa $35-40\text{m}$.
-     - **Tầng bảo vệ khẩn cấp (Hard Emergency Override)**: Tự động đạp phanh $100\%$ và khóa tốc độ nếu cự ly dưới $7\text{m}$.
-   - **Kỷ luật Làn đường & Đánh lái Mượt mà (Lane Discipline & Centering)**:
-     - Xe tự động nhận diện và bám chặt tim làn đường ($X = -2.4\text{m}, 0\text{m}, +2.4\text{m}$), triệt tiêu hoàn toàn hiện tượng xe chạy đè vạch làn va quẹt xe khác.
-     - Chuyển làn chuyển động theo góc xoay tự nhiên của xe (Kinematic Yaw), không dùng lực cưỡng bức trượt ngang.
+   - **Cự ly bám đuôi gọn gàng, tự nhiên (Compact IDM Headway)**:
+     - Tinh chỉnh cự ly an toàn vừa vặn ($s_0 = 2.2\text{m}$, $T = 0.55\text{s}$), loại bỏ khoảng cách quá rộng ($18-20\text{m}$) trước đây. Xe bám đuôi tự nhiên ở cự ly $6-9\text{m}$ khi di chuyển và dừng sát $2.2\text{m}$ khi xếp hàng.
+     - Ngưỡng phanh khẩn cấp được đưa về $3.2\text{m}$, ngăn chặn triệt để hiện tượng phanh giật đột ngột từ xa.
+   - **Chống hiện tượng 2 xe song song chụm đầu đâm nhau**:
+     - Loại bỏ tia quét góc lệch sang làn bên, bổ sung bộ lọc cự ly ngang $(|\text{relX}| \le 1.05\text{m})$ trên cản trước. Xe tuyệt đối không nhận nhầm xe ở làn bên cạnh thành xe phía trước trong làn của mình.
+   - **Ưu tiên lách khi phía trước có vật cản & bên cạnh trống**:
+     - Khi phát hiện người đi bộ, xe dừng sự cố hoặc xe đi trước chạy chậm cản trở, nếu làn bên cạnh thông thoáng (khoảng hở sườn $\ge 0.50\text{m}$, khoảng trống trước $\ge 7\text{m}$, sau $\ge 5\text{m}$), xe **ưu tiên lách dứt khoát sang làn trống** để duy trì tốc độ di chuyển thông suốt.
+   - **Quy tắc điều khiển 2 xe đi song song**:
+     - **Khi 2 xe đi song song nhưng không gần nhau (khoảng hở sườn $\ge 0.50\text{m}$)**: Ưu tiên đi thẳng tuyệt đối theo tim làn, không lạng lách hay đảo hướng vô cớ.
+     - **Khi 2 xe đi song song sát nhau (khoảng hở sườn $< 0.50\text{m}$)**: Tự động kích hoạt lực đẩy dạt ngang tách xa nhau ra, kết hợp lệch pha vận tốc để phá vỡ thế đi song song, ngăn ngừa va chạm sườn.
+   - **Hệ thống Cảm biến Quang học Đa hướng (Omnidirectional Perception)**:
+     - 9 tia cản trước, 8 tia chéo hình quạt, 4 điểm quét sườn mỗi bên, và cảm biến quét trước/sau làn lân cận.
+     - Tích hợp `OnDrawGizmosSelected` hiển thị trực quan toàn bộ chùm tia trong cửa sổ Scene khi chọn xe.
 
 2. **Mô hình chuẩn mực IDM (`VehicleAgent`)**:
    - Triển khai thuật toán *Intelligent Driver Model (Treiber et al., 2000)* phục vụ mục đích đo lường (benchmark) và đối chiếu với AI.
