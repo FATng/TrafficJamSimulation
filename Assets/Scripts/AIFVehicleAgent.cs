@@ -476,70 +476,87 @@ public class AIFVehicleAgent : MonoBehaviour
 
         bool hasPedestrianObstacle = (isPedestrianInPath && nearestPedDist < 26.0f);
         bool hasStoppedVehicleObstacle = (frontVehicleObj != null && isLeaderStopped && distanceToFront < 20.0f);
-        bool wantsToOvertake = (frontVehicleObj != null && !isLeaderStopped && distanceToFront < 22.0f && leaderSpeed < effectiveTargetSpeed * 0.80f && laneChangeCooldownTimer <= 0f);
+        bool hasObstacleAhead = hasPedestrianObstacle || hasStoppedVehicleObstacle;
 
-        if (!isChangingLane)
+        // TUYỆT ĐỐI KHÔNG TÙY Ý ĐỔI HƯỚNG KHI PHÍA TRƯỚC KHÔNG CÓ VẬT CẢN:
+        // Chỉ đổi làn khi có chướng ngại vật thực sự (Người đi bộ hoặc xe trước bị dừng/sự cố)
+        if (!hasObstacleAhead)
         {
-            if (hasPedestrianObstacle)
+            // Không có vật cản: Giữ nguyên làn hiện tại, đi thẳng tuyệt đối, không đổi làn
+            if (!isChangingLane)
             {
-                if (nearestPedDir > 0 && canGoLeft)
-                {
-                    targetLaneIndex = currentLaneIndex - 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-                else if (nearestPedDir < 0 && canGoRight)
-                {
-                    targetLaneIndex = currentLaneIndex + 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-                else if (canGoLeft)
-                {
-                    targetLaneIndex = currentLaneIndex - 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-                else if (canGoRight)
-                {
-                    targetLaneIndex = currentLaneIndex + 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-            }
-            else if (hasStoppedVehicleObstacle || wantsToOvertake)
-            {
-                if (canGoLeft && canGoRight)
-                {
-                    int chosenLane = (currentLaneIndex == 1) ? 0 : 1;
-                    targetLaneIndex = chosenLane;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-                else if (canGoLeft)
-                {
-                    targetLaneIndex = currentLaneIndex - 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
-                else if (canGoRight)
-                {
-                    targetLaneIndex = currentLaneIndex + 1;
-                    targetLaneX = laneCenters[targetLaneIndex];
-                    isChangingLane = true;
-                    laneChangeCooldownTimer = 4.0f;
-                }
+                targetLaneIndex = currentLaneIndex;
+                targetLaneX = laneCenters[currentLaneIndex];
+                if (lightsController != null) lightsController.SetTurnSignal(TurnSignal.None);
             }
         }
         else
         {
-            if (Mathf.Abs(currentPosX - targetLaneX) < 0.25f)
+            if (!isChangingLane && laneChangeCooldownTimer <= 0f)
+            {
+                if (hasPedestrianObstacle)
+                {
+                    if (nearestPedDir > 0 && canGoLeft)
+                    {
+                        targetLaneIndex = currentLaneIndex - 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                    else if (nearestPedDir < 0 && canGoRight)
+                    {
+                        targetLaneIndex = currentLaneIndex + 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                    else if (canGoLeft)
+                    {
+                        targetLaneIndex = currentLaneIndex - 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                    else if (canGoRight)
+                    {
+                        targetLaneIndex = currentLaneIndex + 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                }
+                else if (hasStoppedVehicleObstacle)
+                {
+                    if (canGoLeft && canGoRight)
+                    {
+                        int chosenLane = (currentLaneIndex == 1) ? 0 : 1;
+                        targetLaneIndex = chosenLane;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                    else if (canGoLeft)
+                    {
+                        targetLaneIndex = currentLaneIndex - 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                    else if (canGoRight)
+                    {
+                        targetLaneIndex = currentLaneIndex + 1;
+                        targetLaneX = laneCenters[targetLaneIndex];
+                        isChangingLane = true;
+                        laneChangeCooldownTimer = 4.0f;
+                    }
+                }
+            }
+        }
+
+        // Cập nhật trạng thái đang chuyển làn
+        if (isChangingLane)
+        {
+            if (Mathf.Abs(currentPosX - targetLaneX) < 0.20f)
             {
                 isChangingLane = false;
                 currentLaneIndex = targetLaneIndex;
@@ -695,26 +712,35 @@ public class AIFVehicleAgent : MonoBehaviour
         currentSpeed = Mathf.Clamp(currentSpeed + accel * dt, 0f, effectiveTargetSpeed * 1.15f);
 
         // ===================================================================================
-        // 4. ĐIỀU KHIỂN ĐÁNH LÁI (LANE CENTERING & PROACTIVE SIDE REPULSION):
+        // 4. ĐIỀU KHIỂN ĐÁNH LÁI (LANE CENTERING & DRIVE STRAIGHT):
+        // KHI PHÍA TRƯỚC KHÔNG CÓ VẬT CẢN: KHÔNG TÙY Ý ĐỔI HƯỚNG, CHỈ ĐI THẲNG (+Z)
         // ===================================================================================
         float laneOffset = targetLaneX - currentPosX;
-        float laneSteer = Mathf.Clamp(laneOffset * 0.65f, -0.55f, 0.55f);
+        float steering = 0f;
 
-        float sideSteer = 0f;
-        if (hasCarOnRight && (targetLaneX <= currentPosX + 0.15f))
+        // Chỉ bẻ lái khi đang thực hiện chuyển làn né vật cản hoặc khi xe bị lệch tim làn
+        if (isChangingLane)
         {
-            float urgency = Mathf.Clamp01((sideScanDistance - distToCarRight) / sideScanDistance);
-            sideSteer = -urgency * 0.35f;
+            steering = Mathf.Clamp(laneOffset * 0.75f, -0.65f, 0.65f);
         }
-        else if (hasCarOnLeft && (targetLaneX >= currentPosX - 0.15f))
+        else
         {
-            float urgency = Mathf.Clamp01((sideScanDistance - distToCarLeft) / sideScanDistance);
-            sideSteer = urgency * 0.35f;
+            // Khi không chuyển làn: Nếu lệch tim làn nhẹ, vi chỉnh mượt mà để bám tim làn
+            if (Mathf.Abs(laneOffset) > 0.08f)
+            {
+                steering = Mathf.Clamp(laneOffset * 0.35f, -0.15f, 0.15f);
+            }
+            else
+            {
+                // Đã đúng tim làn và không có vật cản: KHÓA CỨNG = 0 ĐỘ, ĐI THẲNG TUYỆT ĐỐI!
+                steering = 0f;
+            }
         }
 
+        // Kiểm tra an toàn lề đường (chỉ phản ứng khi xe thực sự đi sát mép rào)
         float distToLeftBarrier = transform.position.x - (-maxSafeRoadX);
         float distToRightBarrier = maxSafeRoadX - transform.position.x;
-        float barrierSafetyMargin = 0.75f;
+        float barrierSafetyMargin = 0.65f;
         float barrierRepulsion = 0f;
         if (distToLeftBarrier < barrierSafetyMargin)
         {
@@ -724,8 +750,10 @@ public class AIFVehicleAgent : MonoBehaviour
         {
             barrierRepulsion -= Mathf.Clamp01((barrierSafetyMargin - distToRightBarrier) / barrierSafetyMargin);
         }
-
-        float steering = Mathf.Clamp(laneSteer + sideSteer + barrierRepulsion * 1.2f, -0.65f, 0.65f);
+        if (Mathf.Abs(barrierRepulsion) > 0.01f)
+        {
+            steering = Mathf.Clamp(steering + barrierRepulsion * 1.0f, -0.65f, 0.65f);
+        }
 
         // Hệ thống tách va chạm (Separation & Recovery)
         if (vehicleCollisionTimer > 0f) vehicleCollisionTimer -= dt;
@@ -786,12 +814,18 @@ public class AIFVehicleAgent : MonoBehaviour
 
         Vector3 totalSeparation = vehicleSeparation + curbSeparation;
 
-        // Góc quay mong muốn & Khống chế góc quay
+        // Góc quay mong muốn: Khi không có vật cản và đang bám đúng làn, desiredYaw = 0f (ĐI THẲNG TUYỆT ĐỐI)
         float currentYaw = transform.eulerAngles.y;
         if (currentYaw > 180f) currentYaw -= 360f;
 
-        float desiredYaw = Mathf.Clamp(steering * maxHeadingAngle, -maxHeadingAngle, maxHeadingAngle);
-        float newYaw = Mathf.MoveTowardsAngle(currentYaw, desiredYaw, 40f * dt);
+        float desiredYaw = 0f;
+        if (isChangingLane || Mathf.Abs(laneOffset) > 0.08f || isCollidingWithVehicle || isCollidingWithBarrier)
+        {
+            desiredYaw = Mathf.Clamp(steering * maxHeadingAngle, -maxHeadingAngle, maxHeadingAngle);
+        }
+
+        float newYaw = Mathf.MoveTowardsAngle(currentYaw, desiredYaw, 45f * dt);
+        if (desiredYaw == 0f && Mathf.Abs(newYaw) < 0.2f) newYaw = 0f;
         newYaw = Mathf.Clamp(newYaw, -maxHeadingAngle, maxHeadingAngle);
 
         Quaternion safeRot = Quaternion.Euler(0f, newYaw, 0f);
@@ -802,9 +836,14 @@ public class AIFVehicleAgent : MonoBehaviour
             rb.angularVelocity = Vector3.zero;
         }
 
-        // Chuyển động vật lý
+        // Chuyển động vật lý: Khi đi thẳng tuyệt đối, triệt tiêu hoàn toàn thành phần vận tốc ngang targetVelocity.x
         Vector3 targetVelocity = transform.forward * currentSpeed;
         targetVelocity.y = 0f;
+        if (!isChangingLane && Mathf.Abs(laneOffset) <= 0.08f && !isCollidingWithVehicle && !isCollidingWithBarrier)
+        {
+            targetVelocity.x = 0f;
+            targetVelocity.z = currentSpeed;
+        }
 
         if (dt > 0.0001f)
         {
@@ -857,36 +896,15 @@ public class AIFVehicleAgent : MonoBehaviour
             bool isBrakingNow = (throttle < -0.05f) || (distanceToFront < 6f && currentSpeed > 0.5f) || (collisionVisualizer != null && collisionVisualizer.IsInCrashState);
             lightsController.SetBraking(isBrakingNow);
 
-            // Bật đèn xi nhan vàng khi bẻ lái
-            if (lightsController.autoSignalFromSteering)
+            // Bật đèn xi nhan vàng khi chuyển làn né vật cản, tuyệt đối không bật ngẫu nhiên khi đi thẳng
+            if (isChangingLane)
             {
-                if (steering < -0.05f)
-                {
-                    lightsController.SetTurnSignal(TurnSignal.Left);
-                }
-                else if (steering > 0.05f)
-                {
-                    lightsController.SetTurnSignal(TurnSignal.Right);
-                }
-                else
-                {
-                    // Thỉnh thoảng mô phỏng xi nhan chuyển làn
-                    demoSignalTimer += dt;
-                    if (demoSignalTimer >= nextDemoSignalTime)
-                    {
-                        if (lightsController.CurrentSignal == TurnSignal.None)
-                        {
-                            TurnSignal demoSig = (Random.value > 0.5f) ? TurnSignal.Left : TurnSignal.Right;
-                            lightsController.SetTurnSignal(demoSig);
-                            nextDemoSignalTime = demoSignalTimer + Random.Range(2.5f, 4.0f);
-                        }
-                        else
-                        {
-                            lightsController.SetTurnSignal(TurnSignal.None);
-                            nextDemoSignalTime = demoSignalTimer + Random.Range(8.0f, 16.0f);
-                        }
-                    }
-                }
+                if (targetLaneX < currentPosX) lightsController.SetTurnSignal(TurnSignal.Left);
+                else if (targetLaneX > currentPosX) lightsController.SetTurnSignal(TurnSignal.Right);
+            }
+            else
+            {
+                lightsController.SetTurnSignal(TurnSignal.None);
             }
         }
 
