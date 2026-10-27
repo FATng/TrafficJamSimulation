@@ -47,6 +47,7 @@ public class AIFVehicleAgent : MonoBehaviour
     [Tooltip("Tọa độ X của các làn đường (Mặt đường 10m: [-2.4m, 0m, +2.4m])")]
     public float[] laneCenters = new float[] { -2.4f, 0f, 2.4f };
     [SerializeField] private int currentLaneIndex = 1;
+    [SerializeField] private int targetLaneIndex = 1;
     [SerializeField] private float targetLaneX = 0f;
     [SerializeField] private bool isChangingLane = false;
     private float laneChangeCooldownTimer = 0f;
@@ -128,6 +129,7 @@ public class AIFVehicleAgent : MonoBehaviour
         else if (spawnX > 1.2f) currentLaneIndex = 2;
         else currentLaneIndex = 1;
 
+        targetLaneIndex = currentLaneIndex;
         if (laneCenters == null || laneCenters.Length == 0)
         {
             laneCenters = new float[] { -2.4f, 0f, 2.4f };
