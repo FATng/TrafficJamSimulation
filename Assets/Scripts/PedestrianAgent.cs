@@ -57,6 +57,8 @@ namespace TrafficJamSimulation
         private float _baseHeightY = 0.9f;
         private float _walkTimer = 0f;
         private float _crashTimer = 0f;
+        private float _postCrashGraceTimer = 0f;
+        private GameObject _lastCollidedVehicle = null;
         private Rigidbody _rb;
         private Renderer _renderer;
         private MaterialPropertyBlock _propBlock;
@@ -129,16 +131,52 @@ namespace TrafficJamSimulation
                 {
                     isInCrashState = false;
                     ApplyColor(_normalColor); // Khôi phục màu bình thường
+
+                    // SAU KHOẢNG CHỜ: Lùi người xa xe ra và tiếp tục di chuyển, tránh dừng lặp vô thời hạn
+                    Vector3 sepPos = transform.position;
+
+                    // Dời người dạt mạnh sang hướng qua đường (+X hoặc -X) để thoát khỏi đầu xe
+                    sepPos.x += crossingDirection * 1.8f;
+
+                    // Nếu có xe va chạm: dời người theo trục Z ra xa khỏi đầu xe để tách hẳn hai Collider
+                    if (_lastCollidedVehicle != null)
+                    {
+                        float dz = transform.position.z - _lastCollidedVehicle.transform.position.z;
+                        float zDir = (dz >= 0f) ? 1.0f : -1.0f;
+                        sepPos.z += zDir * 1.5f;
+                    }
+                    else
+                    {
+                        sepPos.z += 1.2f;
+                    }
+
+                    transform.position = sepPos;
+
+                    // Đặt thời gian ân hạn 3.5s: Người không bị đứng sững lại bởi chính xe vừa va chạm
+                    _postCrashGraceTimer = 3.5f;
                 }
                 return; // Đứng yên hoàn toàn khi đang bị đâm
             }
 
-            // 2. Dò quét xe phía trước mặt bằng Raycast: nếu có xe đang đi tới hoặc chắn đường thì dừng lại
-            isYieldingToVehicle = ScanForVehiclesAhead();
-            if (isYieldingToVehicle)
+            if (_postCrashGraceTimer > 0f)
             {
-                // Tạm dừng bước đi, giữ nguyên vị trí, chờ xe chạy qua
-                return;
+                _postCrashGraceTimer -= dt;
+            }
+
+            // 2. Dò quét xe phía trước mặt bằng Raycast: nếu có xe đang đi tới hoặc chắn đường thì dừng lại
+            // Nếu đang trong thời gian ân hạn sau va chạm: bỏ qua quét dừng xe để người dứt khoát bước đi thoát kẹt!
+            if (_postCrashGraceTimer <= 0f)
+            {
+                isYieldingToVehicle = ScanForVehiclesAhead();
+                if (isYieldingToVehicle)
+                {
+                    // Tạm dừng bước đi, giữ nguyên vị trí, chờ xe chạy qua
+                    return;
+                }
+            }
+            else
+            {
+                isYieldingToVehicle = false;
             }
 
             // 3. Di chuyển ngang qua đường theo trục X
@@ -203,10 +241,11 @@ namespace TrafficJamSimulation
         /// <summary>
         /// Kích hoạt trạng thái bị đâm va: tô đỏ rực và đứng yên trong vài giây
         /// </summary>
-        public void TriggerCrash(float pauseDuration = 3.5f)
+        public void TriggerCrash(float pauseDuration = 3.5f, GameObject vehicle = null)
         {
             isInCrashState = true;
             _crashTimer = pauseDuration;
+            if (vehicle != null) _lastCollidedVehicle = vehicle;
             ApplyColor(crashColor);
         }
 
@@ -246,10 +285,13 @@ namespace TrafficJamSimulation
 
         private void HandleVehicleCollision(GameObject other)
         {
+            // Nếu đang trong thời gian ân hạn sau va chạm: bỏ qua kích hoạt lại va chạm tránh dừng lặp vô thời hạn
+            if (_postCrashGraceTimer > 0f) return;
+
             if (other.CompareTag("Vehicle") || other.GetComponentInParent<AIFVehicleAgent>() != null)
             {
                 // Bị xe đâm trúng: Người đổi đỏ rực và dừng lại
-                TriggerCrash(crashPauseDuration);
+                TriggerCrash(crashPauseDuration, other);
 
                 // Đồng thời kích hoạt xe đổi màu đỏ rực và dừng lại
                 var carVis = other.GetComponentInParent<CarCollisionVisualizer>();

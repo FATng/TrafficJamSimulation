@@ -28,7 +28,8 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
 
 1. **Bộ não điều khiển xe thông minh (`AIFVehicleAgent`)**:
    - Tích hợp mạng nơ-ron sâu định dạng **ONNX** chạy trực tiếp trong Unity qua **Unity Sentis**.
-   - Cảm biến **Multi-Raycast 3 tia phía trước**: Quét phủ rộng toàn bộ thân xe, phát hiện xe trước và đọc trạng thái đèn phanh/xi nhan.
+   - **Chủ động chuyển làn né vật cản (Active Obstacle Evasion & Lane Changing)**: Khi phía trước có xe đi chậm/dừng hoặc người qua đường mà làn bên cạnh (Trái/Phải) thông thoáng, xe tự động đánh lái chuyển làn mượt mà, bật đèn xi nhan và duy trì tốc độ cruising, giải tỏa ùn tắc giao thông.
+   - Cảm biến **Multi-Raycast 3 tia thẳng & 6 tia chéo hình quạt ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$)**: Quét phát hiện đa chiều cả xe cộ và người đi bộ từ khoảng cách xa tới $28m$, tính toán trước quỹ đạo cắt ngang.
    - Cảm biến **Side Scan 2 bên sườn & chéo góc**: Phát hiện xe chạy song song, chủ động đánh lái sang bên đường trống hoặc tự động điều chỉnh tốc độ lệch pha để tránh kẹp xe.
    - **Khống chế góc quay (Heading Yaw Clamping)**: Khống chế góc quay tối đa trong khoảng $\pm 18^\circ$, ngăn tuyệt đối hiện tượng va chạm làm quay đầu xe đi ngược chiều.
    - **Cố định cao độ (Height Constraint)**: Triệt tiêu biến dạng trục Y, xe không bị nảy hoặc bay lên trời khi va chạm.
@@ -48,8 +49,8 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
    - **`Pedestrian.prefab`**: Mô hình người đi bộ dạng khối chữ nhật đơn giản (Box/Cube $0.6m 	imes 1.8m 	imes 0.6m$), tối ưu hiệu năng và vật lý chuẩn xác.
    - **Raycast chống đâm xe của người đi bộ (`PedestrianAgent`)**: Bắn tia quét phía trước mặt theo hướng di chuyển ($2.5m$). Nếu phát hiện có xe ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe chạy qua, ngăn ngừa hoàn toàn tình trạng người đâm vào xe.
    - **Raycast chéo hình quạt của xe (Diagonal Fan-out Scan)**: Xe trang bị hệ thống 6 tia quét chéo góc ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$) với tầm quét xa tới $28m$, tính toán thời gian và tọa độ giao cắt dự kiến của người đi bộ đang băng ngang đường từ xa, tránh việc tới sát mũi xe mới phát hiện.
-   - **Bộ não chủ động né người (Active Evasion)**: Khi có góc trống an toàn (làn bên trái hoặc phải không có xe khác), xe chủ động đánh lái lách nhẹ qua phía sau lưng hướng đi của người đi bộ, duy trì tốc độ lướt an toàn ($8-9	ext{ m/s}$) và bật xi nhan né, không bị khựng lại hay phanh chết. Chỉ phanh dừng khi hai bên đều kẹt không thể né.
-   - **Phản xạ tai nạn va chạm**: Khi xảy ra va chạm giữa xe và người, cả hai lập tức chuyển sang màu đỏ rực cảnh báo nguy hiểm và cùng dừng lại hoàn toàn trong 3.5 giây.
+   - **Bộ não chủ động né người (Active Evasion)**: Khi có góc trống an toàn (làn bên trái hoặc phải không có xe khác), xe chủ động đánh lái lách nhẹ qua phía sau lưng hướng đi của người đi bộ, duy trì tốc độ lướt an toàn ($8-10	ext{ m/s}$) và bật xi nhan né, không bị khựng lại hay phanh chết. Chỉ phanh dừng khi hai bên đều kẹt không thể né.
+   - **Cơ chế tách rời sau tai nạn triệt tiêu dừng lặp vô hạn**: Khi va chạm, cả xe và người cùng chuyển đỏ rực và đứng yên 3.5s. Hết thời gian chờ, người đi bộ tự động lùi xa đầu xe ($+1.8m$ theo hướng đi và $+1.5m$ theo Z) kèm thời gian ân hạn $3.5s$ để tiếp tục bước sang đường dứt khoát; xe nhích lùi $25cm$ và nhường đường $2.5s$, loại bỏ hoàn toàn hiện tượng kẹt đông cứng lặp vô tận.
 
 6. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
    - **`CarLightsController`**: Điều khiển đèn phanh (đỏ rực khi đạp phanh), xi nhan vàng nhấp nháy khi chuyển làn/bẻ lái, đèn định vị sau.
