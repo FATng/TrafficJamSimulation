@@ -77,6 +77,21 @@ namespace TrafficJamSimulation
                 _rb.isKinematic = true;
             }
 
+            // Gán PhysicsMaterial triệt tiêu ma sát (zero friction) để người không bao giờ bị bám dính hay kéo theo xe
+            Collider col = GetComponent<Collider>();
+            if (col != null)
+            {
+                PhysicsMaterial zeroFric = new PhysicsMaterial("PedestrianZeroFriction")
+                {
+                    dynamicFriction = 0f,
+                    staticFriction = 0f,
+                    bounciness = 0f,
+                    frictionCombine = PhysicsMaterialCombine.Minimum,
+                    bounceCombine = PhysicsMaterialCombine.Minimum
+                };
+                col.material = zeroFric;
+            }
+
             _renderer = GetComponent<Renderer>();
             _propBlock = new MaterialPropertyBlock();
 
@@ -245,7 +260,11 @@ namespace TrafficJamSimulation
         {
             isInCrashState = true;
             _crashTimer = pauseDuration;
-            if (vehicle != null) _lastCollidedVehicle = vehicle;
+            if (vehicle != null)
+            {
+                _lastCollidedVehicle = vehicle;
+                IgnoreCollisionWithVehicle(vehicle, pauseDuration + 3.0f);
+            }
             ApplyColor(crashColor);
         }
 
@@ -290,6 +309,9 @@ namespace TrafficJamSimulation
 
             if (other.CompareTag("Vehicle") || other.GetComponentInParent<AIFVehicleAgent>() != null)
             {
+                // Vô hiệu hóa va chạm vật lý giữa người và xe ngay lập tức để không bị kéo/kẹt
+                IgnoreCollisionWithVehicle(other, crashPauseDuration + 3.0f);
+
                 // Bị xe đâm trúng: Người đổi đỏ rực và dừng lại
                 TriggerCrash(crashPauseDuration, other);
 
@@ -298,6 +320,49 @@ namespace TrafficJamSimulation
                 if (carVis != null)
                 {
                     carVis.TriggerCrash(crashPauseDuration);
+                }
+
+                var carAgent = other.GetComponentInParent<AIFVehicleAgent>();
+                if (carAgent != null)
+                {
+                    carAgent.NotifyPedestrianCollision(gameObject);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tạm thời bỏ qua va chạm vật lý giữa người và xe để hoàn toàn triệt tiêu lực kéo/đẩy vật lý
+        /// </summary>
+        public void IgnoreCollisionWithVehicle(GameObject vehicleObj, float duration)
+        {
+            if (vehicleObj == null) return;
+            StartCoroutine(IgnoreCollisionRoutine(vehicleObj, duration));
+        }
+
+        private System.Collections.IEnumerator IgnoreCollisionRoutine(GameObject vehicleObj, float duration)
+        {
+            if (vehicleObj == null) yield break;
+            Collider[] myCols = GetComponentsInChildren<Collider>();
+            Collider[] otherCols = vehicleObj.GetComponentsInChildren<Collider>();
+
+            foreach (var m in myCols)
+            {
+                foreach (var o in otherCols)
+                {
+                    if (m != null && o != null) Physics.IgnoreCollision(m, o, true);
+                }
+            }
+
+            yield return new WaitForSeconds(duration);
+
+            if (vehicleObj != null)
+            {
+                foreach (var m in myCols)
+                {
+                    foreach (var o in otherCols)
+                    {
+                        if (m != null && o != null) Physics.IgnoreCollision(m, o, false);
+                    }
                 }
             }
         }

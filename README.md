@@ -28,8 +28,12 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
 
 1. **Bộ não điều khiển xe thông minh (`AIFVehicleAgent`)**:
    - Tích hợp mạng nơ-ron sâu định dạng **ONNX** chạy trực tiếp trong Unity qua **Unity Sentis**.
-   - **Chủ động chuyển làn né vật cản (Active Obstacle Evasion & Lane Changing)**: Khi phía trước có xe đi chậm/dừng hoặc người qua đường mà làn bên cạnh (Trái/Phải) thông thoáng, xe tự động đánh lái chuyển làn mượt mà, bật đèn xi nhan và duy trì tốc độ cruising, giải tỏa ùn tắc giao thông.
-   - Cảm biến **Multi-Raycast 3 tia thẳng & 6 tia chéo hình quạt ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$)**: Quét phát hiện đa chiều cả xe cộ và người đi bộ từ khoảng cách xa tới $28m$, tính toán trước quỹ đạo cắt ngang.
+   - **Chống đâm đuôi xe trước bằng thuật toán IDM động (Dynamic Closing Speed Car Following)**:
+     - Tính toán khoảng cách an toàn phụ thuộc trực tiếp vào vận tốc tiếp cận (Closing Speed $\Delta v = v - v_{\text{leader}}$): $s^*(v, \Delta v) = s_0 + v \cdot T + \frac{v \cdot \Delta v}{2\sqrt{a \cdot b}}$. Xe tự động hãm phanh từ xa ($35-40\text{m}$) khi tiến gần xe phía trước, triệt tiêu hoàn toàn các va chạm đâm đuôi.
+     - **Tầng bảo vệ khẩn cấp (Hard Emergency Override)**: Nếu cự ly rút ngắn dưới $7\text{m}$, xe tự động kích hoạt phanh $100\%$ và triệt tiêu ngay vận tốc dư thừa so với xe trước.
+     - **Cảm biến 7 tia thẳng trước mũi xe**: Bao phủ toàn bộ bề rộng $1.8\text{m}$ của cản trước (tầm quét $55\text{m}$), không bỏ sót bất kỳ góc chéo nào của đuôi xe phía trước.
+   - **Chủ động chuyển làn né vật cản an toàn (Active Obstacle Evasion & Lane Changing)**: Khi phía trước có xe đi chậm/dừng hoặc người qua đường mà làn bên cạnh (Trái/Phải) thông thoáng, xe tự động đánh lái chuyển làn mượt mà, bật xi nhan. Nếu thân xe chưa thoát hẳn khỏi làn xe trước, bộ não tự động hãm tốc độ, ngăn ngừa việc đạp ga đâm vào đuôi xe trước khi đang chuyển làn.
+   - Cảm biến **Multi-Raycast 7 tia thẳng & 6 tia chéo hình quạt ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$)**: Quét phát hiện đa chiều cả xe cộ và người đi bộ từ khoảng cách xa, tính toán trước quỹ đạo cắt ngang.
    - Cảm biến **Side Scan 2 bên sườn & chéo góc**: Phát hiện xe chạy song song, chủ động đánh lái sang bên đường trống hoặc tự động điều chỉnh tốc độ lệch pha để tránh kẹp xe.
    - **Khống chế góc quay (Heading Yaw Clamping)**: Khống chế góc quay tối đa trong khoảng $\pm 18^\circ$, ngăn tuyệt đối hiện tượng va chạm làm quay đầu xe đi ngược chiều.
    - **Cố định cao độ (Height Constraint)**: Triệt tiêu biến dạng trục Y, xe không bị nảy hoặc bay lên trời khi va chạm.
@@ -50,7 +54,10 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
    - **Raycast chống đâm xe của người đi bộ (`PedestrianAgent`)**: Bắn tia quét phía trước mặt theo hướng di chuyển ($2.5m$). Nếu phát hiện có xe ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe chạy qua, ngăn ngừa hoàn toàn tình trạng người đâm vào xe.
    - **Raycast chéo hình quạt của xe (Diagonal Fan-out Scan)**: Xe trang bị hệ thống 6 tia quét chéo góc ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$) với tầm quét xa tới $28m$, tính toán thời gian và tọa độ giao cắt dự kiến của người đi bộ đang băng ngang đường từ xa, tránh việc tới sát mũi xe mới phát hiện.
    - **Bộ não chủ động né người (Active Evasion)**: Khi có góc trống an toàn (làn bên trái hoặc phải không có xe khác), xe chủ động đánh lái lách nhẹ qua phía sau lưng hướng đi của người đi bộ, duy trì tốc độ lướt an toàn ($8-10	ext{ m/s}$) và bật xi nhan né, không bị khựng lại hay phanh chết. Chỉ phanh dừng khi hai bên đều kẹt không thể né.
-   - **Cơ chế tách rời sau tai nạn triệt tiêu dừng lặp vô hạn**: Khi va chạm, cả xe và người cùng chuyển đỏ rực và đứng yên 3.5s. Hết thời gian chờ, người đi bộ tự động lùi xa đầu xe ($+1.8m$ theo hướng đi và $+1.5m$ theo Z) kèm thời gian ân hạn $3.5s$ để tiếp tục bước sang đường dứt khoát; xe nhích lùi $25cm$ và nhường đường $2.5s$, loại bỏ hoàn toàn hiện tượng kẹt đông cứng lặp vô tận.
+   - **Triệt tiêu hiện tượng kéo/dính theo nhau (Physics Decoupling & Zero Friction)**:
+     - Khi xảy ra va chạm giữa người và xe, hệ thống lập tức kích hoạt `Physics.IgnoreCollision` tạm thời giữa toàn bộ Collider của xe và người, đồng thời áp dụng `PhysicsMaterial` triệt tiêu ma sát ($0$ friction).
+     - Khi tiếp tục di chuyển, người đi bộ và xe hoàn toàn không bị kéo rê, đẩy dạt hoặc bám dính vào nhau.
+   - **Cơ chế tách rời sau tai nạn triệt tiêu dừng lặp vô hạn**: Khi va chạm, cả xe và người cùng chuyển đỏ rực và đứng yên 3.5s. Hết thời gian chờ, người đi bộ tự động dạt xa đầu xe ($+2.0\text{m}$ theo hướng qua đường và $+1.5\text{m}$ theo Z) kèm thời gian ân hạn $3.5\text{s}$ để tiếp tục bước dứt khoát; xe nhích lùi $40\text{cm}$ và nhường đường $2.5\text{s}$, loại bỏ hoàn toàn hiện tượng kẹt đông cứng lặp vô tận.
 
 6. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
    - **`CarLightsController`**: Điều khiển đèn phanh (đỏ rực khi đạp phanh), xi nhan vàng nhấp nháy khi chuyển làn/bẻ lái, đèn định vị sau.
