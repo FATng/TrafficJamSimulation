@@ -28,16 +28,20 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
 
 1. **Bộ não điều khiển xe thông minh (`AIFVehicleAgent`)**:
    - Tích hợp mạng nơ-ron sâu định dạng **ONNX** chạy trực tiếp trong Unity qua **Unity Sentis**.
-   - **Chống đâm đuôi xe trước bằng thuật toán IDM động (Dynamic Closing Speed Car Following)**:
-     - Tính toán khoảng cách an toàn phụ thuộc trực tiếp vào vận tốc tiếp cận (Closing Speed $\Delta v = v - v_{\text{leader}}$): $s^*(v, \Delta v) = s_0 + v \cdot T + \frac{v \cdot \Delta v}{2\sqrt{a \cdot b}}$. Xe tự động hãm phanh từ xa ($35-40\text{m}$) khi tiến gần xe phía trước, triệt tiêu hoàn toàn các va chạm đâm đuôi.
-     - **Tầng bảo vệ khẩn cấp (Hard Emergency Override)**: Nếu cự ly rút ngắn dưới $7\text{m}$, xe tự động kích hoạt phanh $100\%$ và triệt tiêu ngay vận tốc dư thừa so với xe trước.
-     - **Cảm biến 7 tia thẳng trước mũi xe**: Bao phủ toàn bộ bề rộng $1.8\text{m}$ của cản trước (tầm quét $55\text{m}$), không bỏ sót bất kỳ góc chéo nào của đuôi xe phía trước.
-   - **Chủ động chuyển làn né vật cản an toàn (Active Obstacle Evasion & Lane Changing)**: Khi phía trước có xe đi chậm/dừng hoặc người qua đường mà làn bên cạnh (Trái/Phải) thông thoáng, xe tự động đánh lái chuyển làn mượt mà, bật xi nhan. Nếu thân xe chưa thoát hẳn khỏi làn xe trước, bộ não tự động hãm tốc độ, ngăn ngừa việc đạp ga đâm vào đuôi xe trước khi đang chuyển làn.
-   - Cảm biến **Multi-Raycast 7 tia thẳng & 6 tia chéo hình quạt ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$)**: Quét phát hiện đa chiều cả xe cộ và người đi bộ từ khoảng cách xa, tính toán trước quỹ đạo cắt ngang.
-   - Cảm biến **Side Scan 2 bên sườn & chéo góc**: Phát hiện xe chạy song song, chủ động đánh lái sang bên đường trống hoặc tự động điều chỉnh tốc độ lệch pha để tránh kẹp xe.
-   - **Khống chế góc quay (Heading Yaw Clamping)**: Khống chế góc quay tối đa trong khoảng $\pm 18^\circ$, ngăn tuyệt đối hiện tượng va chạm làm quay đầu xe đi ngược chiều.
-   - **Cố định cao độ (Height Constraint)**: Triệt tiêu biến dạng trục Y, xe không bị nảy hoặc bay lên trời khi va chạm.
-   - **Hệ thống phục hồi va chạm (Separation & Recovery)**: Tự động phát hiện va chạm xe - xe hoặc xe - lề đường để tách nhẹ các xe ra và đẩy xe khỏi mép rào chắn.
+   - **Hệ thống Cảm biến Quang học Đa hướng Toàn diện (Omnidirectional Perception Raycasts)**:
+     - **Chùm 9 tia cản trước + 2 tia góc nhẹ (±6°)**: Phủ kín toàn bộ cản trước $1.8\text{m}$ với tầm quét xa tới $60\text{m}$, nhận diện xe trước và người đi bộ ở mọi góc tiếp cận.
+     - **8 tia chéo hình quạt đón đầu (±15°, ±30°, ±45°, ±60°)**: Tầm quét $30\text{m}$, phát hiện sớm người cắt ngang đường và xe nhập làn.
+     - **Cảm biến làn lân cận (Parallel Lane Lookahead)**: Bắn tia quét trước ($35\text{m}$) và quét sau / điểm mù ($22\text{m}$) trên làn Trái và Phải, đảm bảo $100\%$ không bao giờ chuyển làn tạt đầu hoặc đâm vào xe khác.
+     - **4 điểm quét sườn xe mỗi bên**: Quét dọc thân xe ($Z = \pm 1.8\text{m}, \pm 0.6\text{m}$), phát hiện xe chạy song song sát sườn và đẩy né nhẹ nhàng.
+     - **Trực quan hóa Raycast (Gizmos Debug)**: Hỗ trợ `OnDrawGizmosSelected` hiển thị đầy đủ chùm tia trực quan trong cửa sổ Scene khi chọn xe.
+   - **Khắc phục triệt để lỗi xe dừng khi xe trước ở xa & chống đâm va (IDM Car-Following)**:
+     - Phân định rõ ràng: Xe chỉ dừng lại khi gặp chướng ngại vật tĩnh (xe chết máy $< 2.0\text{m/s}$ hoặc người qua đường).
+     - Khi xe phía trước đang di chuyển bình thường, xe sau **DUY TRÌ TỐC ĐỘ BÁM ĐUÔI THEO IDM**, tăng ga theo cự ly an toàn, tuyệt đối không bị phanh chết hay đứng sững lại dù xe trước ở xa.
+     - Tính toán khoảng cách an toàn động theo vận tốc tiếp cận (Closing Speed $\Delta v$): $s^*(v, \Delta v) = s_0 + v \cdot T + \frac{v \cdot \Delta v}{2\sqrt{a \cdot b}}$. Hãm phanh mượt mà từ xa $35-40\text{m}$.
+     - **Tầng bảo vệ khẩn cấp (Hard Emergency Override)**: Tự động đạp phanh $100\%$ và khóa tốc độ nếu cự ly dưới $7\text{m}$.
+   - **Kỷ luật Làn đường & Đánh lái Mượt mà (Lane Discipline & Centering)**:
+     - Xe tự động nhận diện và bám chặt tim làn đường ($X = -2.4\text{m}, 0\text{m}, +2.4\text{m}$), triệt tiêu hoàn toàn hiện tượng xe chạy đè vạch làn va quẹt xe khác.
+     - Chuyển làn chuyển động theo góc xoay tự nhiên của xe (Kinematic Yaw), không dùng lực cưỡng bức trượt ngang.
 
 2. **Mô hình chuẩn mực IDM (`VehicleAgent`)**:
    - Triển khai thuật toán *Intelligent Driver Model (Treiber et al., 2000)* phục vụ mục đích đo lường (benchmark) và đối chiếu với AI.

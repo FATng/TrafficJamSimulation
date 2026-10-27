@@ -43,6 +43,14 @@ public class AIFVehicleAgent : MonoBehaviour
     [Header("Collision Effect")]
     [SerializeField] private CarCollisionVisualizer collisionVisualizer;
 
+    [Header("Lane Discipline & Centering (Hệ Thống Làn Đường)")]
+    [Tooltip("Tọa độ X của các làn đường (Mặt đường 10m: [-2.4m, 0m, +2.4m])")]
+    public float[] laneCenters = new float[] { -2.4f, 0f, 2.4f };
+    [SerializeField] private int currentLaneIndex = 1;
+    [SerializeField] private float targetLaneX = 0f;
+    [SerializeField] private bool isChangingLane = false;
+    private float laneChangeCooldownTimer = 0f;
+
     [Header("Side Vehicle Detection & Evasion (Né Xe Đi Song Song)")]
     [Tooltip("Khoảng cách quét xe đi song song hai bên sườn (m)")]
     public float sideScanDistance = 2.8f;
@@ -114,6 +122,19 @@ public class AIFVehicleAgent : MonoBehaviour
         // Giảm tốc độ của xe có hurryFactor cao xuống một lượng nhỏ (Lerp 0.6) để xe dễ kiểm soát quán tính
         effectiveTargetSpeed = targetSpeed * Mathf.Lerp(1.0f, hurryFactor, 0.6f);
 
+        // Tự động nhận diện làn đường ban đầu dựa trên vị trí spawn
+        float spawnX = transform.position.x;
+        if (spawnX < -1.2f) currentLaneIndex = 0;
+        else if (spawnX > 1.2f) currentLaneIndex = 2;
+        else currentLaneIndex = 1;
+
+        if (laneCenters == null || laneCenters.Length == 0)
+        {
+            laneCenters = new float[] { -2.4f, 0f, 2.4f };
+        }
+        targetLaneX = laneCenters[currentLaneIndex];
+        laneChangeCooldownTimer = Random.Range(2.0f, 5.0f);
+
         // Áp dụng vật liệu vật lý rắn chắc (không bounciness, ma sát nhẹ)
         Collider[] allCols = GetComponentsInChildren<Collider>();
         PhysicsMaterial solidMat = new PhysicsMaterial("SolidVehicleMaterial")
@@ -181,11 +202,16 @@ public class AIFVehicleAgent : MonoBehaviour
             postPedestrianCollisionGraceTimer -= dt;
         }
 
+        if (laneChangeCooldownTimer > 0f)
+        {
+            laneChangeCooldownTimer -= dt;
+        }
+
         // 1. Thu thập trạng thái (Observation Vector)
         effectiveTargetSpeed = targetSpeed * Mathf.Lerp(1.0f, hurryFactor, 0.6f);
         float speedError = (effectiveTargetSpeed - currentSpeed) / Mathf.Max(1f, effectiveTargetSpeed);
 
-        // Tính toán ranh giới đường (road boundary) chuẩn hóa: [-1 = mép trái, 0 = tim đường, +1 = mép phải]
+        // Chuẩn hóa ranh giới đường: [-1 = mép trái, 0 = tim đường, +1 = mép phải]
         float halfRoadWidth = Mathf.Max(1f, roadWidth * 0.5f);
         normalizedRoadOffset = Mathf.Clamp(transform.position.x / halfRoadWidth, -1f, 1f);
 
@@ -194,92 +220,107 @@ public class AIFVehicleAgent : MonoBehaviour
         {
             TrafficFieldManager.Instance.RegisterVehiclePosition(transform.position);
         }
-        // -----------------------------------------------------------------------------------
-        // 1. DÒ TIA PHÍA TRƯỚC VÀ DÒ TIA CHÉO HÌNH QUẠT (DIAGONAL FAN-OUT SCAN):
-        // - 3 tia thẳng trước mũi xe: bao phủ bề rộng xe (1.8m) phát hiện xe liền trước và người.
-        // - 6 tia chéo mở rộng (±15°, ±30°, ±45°) tầm xa 28m: quét đón đầu người đi bộ đang
-        //   di chuyển ngang và nhận biết xe cộ ở các góc chéo lân cận để chuyển làn an toàn.
-        // -----------------------------------------------------------------------------------
-        float distanceToFront = 50f;
+
+        // ===================================================================================
+        // 1. HỆ THỐNG CẢM BIẾN QUANG HỌC ĐA HƯỚNG TOÀN DIỆN (OMNIDIRECTIONAL PERCEPTION):
+        // A. Chùm 9 tia thẳng mặt cản trước (-0.90m đến +0.90m) tầm quét xa 60m
+        // B. 2 tia góc nhẹ (±6°) từ hai góc cản trước tầm quét xa 45m
+        // C. 8 tia chéo góc đón đầu (±15°, ±30°, ±45°, ±60°) tầm quét 30m
+        // D. 4 điểm quét sườn xe mỗi bên (-transform.right & +transform.right) tầm quét 2.8m
+        // E. Cảm biến làn lân cận: Quét trước (35m) & quét sau/điểm mù (22m) trên làn Trái/Phải
+        // ===================================================================================
+        float distanceToFront = 60f;
         isFrontCarBraking = false;
         frontCarTurnSignal = TurnSignal.None;
         GameObject frontVehicleObj = null;
 
         bool isPedestrianInPath = false;
-        float nearestPedDist = 50f;
+        float nearestPedDist = 60f;
         float nearestPedRelX = 0f;
         int nearestPedDir = 0;
 
-        bool hasCarOnLeftDiag = false;
-        bool hasCarOnRightDiag = false;
-
         Vector3 carCenter = new Vector3(transform.position.x, fixedHeightY, transform.position.z);
-        Vector3 baseRayOrigin = carCenter + transform.forward * 2.05f;
+        Vector3 frontBumperCenter = carCenter + transform.forward * 2.05f;
 
-        // A. 7 tia thẳng trước mũi xe phủ kín bề rộng 1.8m (tránh lọt khe góc chéo đuôi xe trước)
-        float[] rayOffsetsX = new float[] { 0f, -0.35f, 0.35f, -0.65f, 0.65f, -0.85f, 0.85f };
-        for (int r = 0; r < rayOffsetsX.Length; r++)
+        // A. 9 tia thẳng trải đều trên mặt cản trước phủ kín toàn bộ bề rộng thân xe 1.8m
+        float[] frontOffsetsX = new float[] { 0f, -0.22f, 0.22f, -0.45f, 0.45f, -0.68f, 0.68f, -0.90f, 0.90f };
+        for (int r = 0; r < frontOffsetsX.Length; r++)
         {
-            Vector3 origin = baseRayOrigin + transform.right * rayOffsetsX[r];
-            if (Physics.Raycast(origin, transform.forward, out RaycastHit hit, 55f))
+            Vector3 origin = frontBumperCenter + transform.right * frontOffsetsX[r];
+            if (Physics.Raycast(origin, transform.forward, out RaycastHit hit, 60f))
             {
                 if (hit.collider.gameObject != gameObject)
                 {
-                    bool isVehicle = hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
+                    bool isVeh = hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
                     bool isPed = hit.collider.CompareTag("Pedestrian") || hit.collider.GetComponentInParent<PedestrianAgent>() != null;
 
-                    if (isVehicle)
+                    if (isVeh && hit.distance < distanceToFront)
                     {
-                        if (hit.distance < distanceToFront)
-                        {
-                            distanceToFront = hit.distance;
-                            frontVehicleObj = hit.collider.gameObject;
-                        }
+                        distanceToFront = hit.distance;
+                        frontVehicleObj = hit.collider.gameObject;
                     }
-                    else if (isPed)
+                    else if (isPed && hit.distance < nearestPedDist)
                     {
                         isPedestrianInPath = true;
-                        if (hit.distance < nearestPedDist)
-                        {
-                            nearestPedDist = hit.distance;
-                            nearestPedRelX = hit.point.x - transform.position.x;
-                            var pedAgent = hit.collider.GetComponentInParent<PedestrianAgent>();
-                            if (pedAgent != null) nearestPedDir = pedAgent.crossingDirection;
-                        }
+                        nearestPedDist = hit.distance;
+                        nearestPedRelX = hit.point.x - transform.position.x;
+                        var pAgent = hit.collider.GetComponentInParent<PedestrianAgent>();
+                        if (pAgent != null) nearestPedDir = pAgent.crossingDirection;
                     }
                 }
             }
         }
 
-        // B. 6 tia quét chéo góc đón đầu (±15°, ±30°, ±45°) tầm xa 28m
-        float[] diagAngles = new float[] { -45f, -30f, -15f, 15f, 30f, 45f };
+        // B. 2 tia góc nhẹ (±6°) từ hai góc cản trước để nhận biết xe lệch góc hoặc hơi chéo
+        float[] cornerAngles = new float[] { -6f, 6f };
+        for (int c = 0; c < cornerAngles.Length; c++)
+        {
+            Vector3 origin = frontBumperCenter + transform.right * (cornerAngles[c] < 0f ? -0.85f : 0.85f);
+            Vector3 dir = Quaternion.Euler(0f, cornerAngles[c], 0f) * transform.forward;
+            if (Physics.Raycast(origin, dir, out RaycastHit hit, 45f))
+            {
+                if (hit.collider.gameObject != gameObject)
+                {
+                    bool isVeh = hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
+                    if (isVeh && hit.distance < distanceToFront)
+                    {
+                        distanceToFront = hit.distance;
+                        frontVehicleObj = hit.collider.gameObject;
+                    }
+                }
+            }
+        }
+
+        // C. 8 tia quét chéo góc đón đầu (±15°, ±30°, ±45°, ±60°) tầm xa 30m
+        bool hasCarOnLeftFrontDiag = false;
+        bool hasCarOnRightFrontDiag = false;
+
+        float[] diagAngles = new float[] { -60f, -45f, -30f, -15f, 15f, 30f, 45f, 60f };
         for (int d = 0; d < diagAngles.Length; d++)
         {
             Vector3 diagDir = Quaternion.Euler(0f, diagAngles[d], 0f) * transform.forward;
-            if (Physics.Raycast(baseRayOrigin, diagDir, out RaycastHit diagHit, 28f))
+            if (Physics.Raycast(frontBumperCenter, diagDir, out RaycastHit diagHit, 30f))
             {
                 if (diagHit.collider.gameObject != gameObject)
                 {
                     bool isPed = diagHit.collider.CompareTag("Pedestrian") || diagHit.collider.GetComponentInParent<PedestrianAgent>() != null;
-                    bool isVehicle = diagHit.collider.CompareTag("Vehicle") || diagHit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
+                    bool isVeh = diagHit.collider.CompareTag("Vehicle") || diagHit.collider.GetComponentInParent<AIFVehicleAgent>() != null;
 
                     if (isPed)
                     {
                         float pedDistZ = diagHit.point.z - transform.position.z;
                         float pedDistX = diagHit.point.x - transform.position.x;
 
-                        if (pedDistZ > 0.5f && pedDistZ < 28f)
+                        if (pedDistZ > 0.5f && pedDistZ < 30f)
                         {
                             var pedAgent = diagHit.collider.GetComponentInParent<PedestrianAgent>();
                             int pedDir = (pedAgent != null) ? pedAgent.crossingDirection : (pedDistX > 0 ? -1 : 1);
                             float pedSpeed = (pedAgent != null) ? pedAgent.walkingSpeed : 1.4f;
 
-                            // Dự đoán vị trí của người đi bộ khi xe đến cùng tọa độ Z
                             float timeToMeet = pedDistZ / Mathf.Max(2.0f, currentSpeed);
                             float predictedPedX = diagHit.point.x + (pedDir * pedSpeed * timeToMeet);
                             float predictedRelX = predictedPedX - transform.position.x;
 
-                            // Nếu người đang cắt ngang hướng đi của xe hoặc đang nằm gần luồng xe
                             if (Mathf.Abs(predictedRelX) < 2.5f || Mathf.Abs(pedDistX) < 2.2f)
                             {
                                 isPedestrianInPath = true;
@@ -292,20 +333,101 @@ public class AIFVehicleAgent : MonoBehaviour
                             }
                         }
                     }
-                    else if (isVehicle)
+                    else if (isVeh)
                     {
-                        // Kiểm tra xe ở làn chéo lân cận để đảm bảo an toàn khi chuyển làn
-                        if (diagHit.distance < 12.0f)
+                        if (diagHit.distance < 8.0f)
                         {
-                            if (diagAngles[d] < 0f) hasCarOnLeftDiag = true;
-                            else if (diagAngles[d] > 0f) hasCarOnRightDiag = true;
+                            if (diagAngles[d] < 0f) hasCarOnLeftFrontDiag = true;
+                            else hasCarOnRightFrontDiag = true;
                         }
                     }
                 }
             }
         }
 
+        // D. 4 điểm quét sườn xe mỗi bên (-transform.right & +transform.right)
+        bool hasCarOnLeft = false;
+        bool hasCarOnRight = false;
+        float distToCarLeft = 50f;
+        float distToCarRight = 50f;
+        float halfWidth = 0.95f;
+        float[] sideOffsetsZ = new float[] { 1.8f, 0.6f, -0.6f, -1.8f };
+
+        for (int s = 0; s < sideOffsetsZ.Length; s++)
+        {
+            Vector3 leftOrigin = carCenter + transform.forward * sideOffsetsZ[s] - transform.right * halfWidth;
+            if (Physics.Raycast(leftOrigin, -transform.right, out RaycastHit hitL, sideScanDistance))
+            {
+                if (hitL.collider.gameObject != gameObject && (hitL.collider.CompareTag("Vehicle") || hitL.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    hasCarOnLeft = true;
+                    if (hitL.distance < distToCarLeft) distToCarLeft = hitL.distance;
+                }
+            }
+
+            Vector3 rightOrigin = carCenter + transform.forward * sideOffsetsZ[s] + transform.right * halfWidth;
+            if (Physics.Raycast(rightOrigin, transform.right, out RaycastHit hitR, sideScanDistance))
+            {
+                if (hitR.collider.gameObject != gameObject && (hitR.collider.CompareTag("Vehicle") || hitR.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    hasCarOnRight = true;
+                    if (hitR.distance < distToCarRight) distToCarRight = hitR.distance;
+                }
+            }
+        }
+
+        // E. Cảm biến làn lân cận: Quét trước (35m) và quét sau/điểm mù (22m) trên làn Trái/Phải
+        float distLeftLaneAhead = 50f;
+        float distLeftLaneBehind = 50f;
+        float distRightLaneAhead = 50f;
+        float distRightLaneBehind = 50f;
+
+        if (currentLaneIndex > 0)
+        {
+            float leftLaneX = laneCenters[currentLaneIndex - 1];
+            Vector3 leftLaneOrigin = new Vector3(leftLaneX, fixedHeightY, transform.position.z);
+
+            if (Physics.Raycast(leftLaneOrigin, Vector3.forward, out RaycastHit hitLAhead, 35f))
+            {
+                if (hitLAhead.collider.gameObject != gameObject && (hitLAhead.collider.CompareTag("Vehicle") || hitLAhead.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    distLeftLaneAhead = hitLAhead.distance;
+                }
+            }
+            if (Physics.Raycast(leftLaneOrigin, Vector3.back, out RaycastHit hitLBehind, 22f))
+            {
+                if (hitLBehind.collider.gameObject != gameObject && (hitLBehind.collider.CompareTag("Vehicle") || hitLBehind.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    distLeftLaneBehind = hitLBehind.distance;
+                }
+            }
+        }
+
+        if (currentLaneIndex < 2)
+        {
+            float rightLaneX = laneCenters[currentLaneIndex + 1];
+            Vector3 rightLaneOrigin = new Vector3(rightLaneX, fixedHeightY, transform.position.z);
+
+            if (Physics.Raycast(rightLaneOrigin, Vector3.forward, out RaycastHit hitRAhead, 35f))
+            {
+                if (hitRAhead.collider.gameObject != gameObject && (hitRAhead.collider.CompareTag("Vehicle") || hitRAhead.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    distRightLaneAhead = hitRAhead.distance;
+                }
+            }
+            if (Physics.Raycast(rightLaneOrigin, Vector3.back, out RaycastHit hitRBehind, 22f))
+            {
+                if (hitRBehind.collider.gameObject != gameObject && (hitRBehind.collider.CompareTag("Vehicle") || hitRBehind.collider.GetComponentInParent<AIFVehicleAgent>() != null))
+                {
+                    distRightLaneBehind = hitRBehind.distance;
+                }
+            }
+        }
+
+        // Thông số xe phía trước & vận tốc tiếp cận (Closing Speed)
         float leaderSpeed = 0f;
+        bool isLeaderStopped = false;
+
         if (frontVehicleObj != null)
         {
             AIFVehicleAgent leaderAgent = frontVehicleObj.GetComponentInParent<AIFVehicleAgent>();
@@ -325,240 +447,180 @@ public class AIFVehicleAgent : MonoBehaviour
                 isFrontCarBraking = frontLights.IsBraking;
                 frontCarTurnSignal = frontLights.CurrentSignal;
             }
+
+            if (leaderSpeed < 2.0f) isLeaderStopped = true;
         }
+
         float closingSpeed = (frontVehicleObj != null) ? Mathf.Max(0f, currentSpeed - leaderSpeed) : 0f;
+        isOpenRoadAhead = (distanceToFront >= 24f && !isPedestrianInPath);
 
-        isOpenRoadAhead = (distanceToFront >= 22f && !isPedestrianInPath);
-
-        // -----------------------------------------------------------------------------------
-        // 2. DÒ XE ĐI SONG SONG HAI BÊN SƯỜN & KIỂM TRA KHÔNG GIAN LÀN ĐƯỜNG TRỐNG
-        // -----------------------------------------------------------------------------------
-        bool hasCarOnLeft = false;
-        bool hasCarOnRight = false;
-        float distToCarLeft = 50f;
-        float distToCarRight = 50f;
-
-        float halfWidth = 0.92f;
-        float[] sideOffsetsZ = new float[] { 1.2f, -0.6f };
-
-        // Quét sườn trái (-transform.right)
-        for (int s = 0; s < sideOffsetsZ.Length; s++)
-        {
-            Vector3 leftOrigin = carCenter + transform.forward * sideOffsetsZ[s] - transform.right * halfWidth;
-            if (Physics.Raycast(leftOrigin, -transform.right, out RaycastHit hitL, sideScanDistance))
-            {
-                if (hitL.collider.gameObject != gameObject && (hitL.collider.CompareTag("Vehicle") || hitL.collider.GetComponentInParent<AIFVehicleAgent>() != null))
-                {
-                    hasCarOnLeft = true;
-                    if (hitL.distance < distToCarLeft) distToCarLeft = hitL.distance;
-                }
-            }
-        }
-
-        // Quét sườn phải (+transform.right)
-        for (int s = 0; s < sideOffsetsZ.Length; s++)
-        {
-            Vector3 rightOrigin = carCenter + transform.forward * sideOffsetsZ[s] + transform.right * halfWidth;
-            if (Physics.Raycast(rightOrigin, transform.right, out RaycastHit hitR, sideScanDistance))
-            {
-                if (hitR.collider.gameObject != gameObject && (hitR.collider.CompareTag("Vehicle") || hitR.collider.GetComponentInParent<AIFVehicleAgent>() != null))
-                {
-                    hasCarOnRight = true;
-                    if (hitR.distance < distToCarRight) distToCarRight = hitR.distance;
-                }
-            }
-        }
-
-        // Quét kiểm tra góc chéo phía trước (Diagonal Front-Left & Diagonal Front-Right)
-        bool isLeftDiagClear = !hasCarOnLeftDiag;
-        bool isRightDiagClear = !hasCarOnRightDiag;
-        Vector3 diagLeftDir = (-transform.right * 0.707f + transform.forward * 0.707f).normalized;
-        Vector3 diagRightDir = (transform.right * 0.707f + transform.forward * 0.707f).normalized;
-        Vector3 frontCenterPoint = carCenter + transform.forward * 2.05f;
-
-        if (Physics.Raycast(frontCenterPoint, diagLeftDir, out RaycastHit diagLHit, 6.0f))
-        {
-            if (diagLHit.collider.gameObject != gameObject && (diagLHit.collider.CompareTag("Vehicle") || diagLHit.collider.GetComponentInParent<AIFVehicleAgent>() != null))
-            {
-                isLeftDiagClear = false;
-            }
-        }
-
-        if (Physics.Raycast(frontCenterPoint, diagRightDir, out RaycastHit diagRHit, 6.0f))
-        {
-            if (diagRHit.collider.gameObject != gameObject && (diagRHit.collider.CompareTag("Vehicle") || diagRHit.collider.GetComponentInParent<AIFVehicleAgent>() != null))
-            {
-                isRightDiagClear = false;
-            }
-        }
-
+        // ===================================================================================
+        // 2. ĐÁNH GIÁ AN TOÀN CHUYỂN LÀN & NÉ VẬT CẢN (LANE DISCIPLINE & EVASION):
+        // ===================================================================================
         float currentPosX = transform.position.x;
-        // Kiểm tra an toàn làn bên cạnh: Không có xe sườn, không có xe chéo và cách mép rào đường an toàn
-        bool canGoLeft = !hasCarOnLeft && isLeftDiagClear && (currentPosX > -2.7f);
-        bool canGoRight = !hasCarOnRight && isRightDiagClear && (currentPosX < 2.7f);
+        bool canGoLeft = (currentLaneIndex > 0) &&
+                         !hasCarOnLeft &&
+                         !hasCarOnLeftFrontDiag &&
+                         (distLeftLaneAhead > 16.0f) &&
+                         (distLeftLaneBehind > 14.0f) &&
+                         (currentPosX > -3.2f);
 
-        float sideEvasionSteer = 0f;
+        bool canGoRight = (currentLaneIndex < 2) &&
+                          !hasCarOnRight &&
+                          !hasCarOnRightFrontDiag &&
+                          (distRightLaneAhead > 16.0f) &&
+                          (distRightLaneBehind > 14.0f) &&
+                          (currentPosX < 3.2f);
 
-        // Né xe đi song song sát sườn
-        if (hasCarOnRight && canGoLeft)
-        {
-            float urgency = Mathf.Clamp01((sideScanDistance - distToCarRight) / sideScanDistance);
-            sideEvasionSteer = -Mathf.Lerp(0.28f, sideEvasionSteerStrength, urgency);
-        }
-        else if (hasCarOnLeft && canGoRight)
-        {
-            float urgency = Mathf.Clamp01((sideScanDistance - distToCarLeft) / sideScanDistance);
-            sideEvasionSteer = Mathf.Lerp(0.28f, sideEvasionSteerStrength, urgency);
-        }
-        else if (hasCarOnLeft || hasCarOnRight)
-        {
-            if (hurryFactor >= 1.0f) effectiveTargetSpeed += 1.5f;
-            else effectiveTargetSpeed = Mathf.Max(3f, effectiveTargetSpeed - 1.5f);
-        }
-
-        // -----------------------------------------------------------------------------------
-        // 2b. BỘ NÃO CHỦ ĐỘNG NÉ VẬT CẢN & CHUYỂN LÀN THÔNG MINH (ACTIVE OBSTACLE & LANE EVASION):
-        // Khi phía trước có vật cản (xe trước chạy chậm/dừng hoặc người qua đường) VÀ
-        // ở bên cạnh không có vật cản (canGoLeft hoặc canGoRight):
-        // Xe CHỦ ĐỘNG BẺ LÁI NÉ SANG LÀN ĐÓ để tiếp tục di chuyển, không bị dừng chờ tắc nghẽn!
-        // -----------------------------------------------------------------------------------
-        float obstacleEvasionSteer = 0f;
-        bool isEvadingObstacle = false;
-
-        bool hasFrontVehicleObstacle = (frontVehicleObj != null && distanceToFront < 20.0f);
         bool hasPedestrianObstacle = (isPedestrianInPath && nearestPedDist < 26.0f);
-        bool hasObstacleAhead = hasFrontVehicleObstacle || hasPedestrianObstacle;
+        bool hasStoppedVehicleObstacle = (frontVehicleObj != null && isLeaderStopped && distanceToFront < 20.0f);
+        bool wantsToOvertake = (frontVehicleObj != null && !isLeaderStopped && distanceToFront < 22.0f && leaderSpeed < effectiveTargetSpeed * 0.80f && laneChangeCooldownTimer <= 0f);
 
-        if (hasObstacleAhead)
+        if (!isChangingLane)
         {
-            // Tình huống A: Vật cản là người đi bộ cắt ngang
             if (hasPedestrianObstacle)
             {
-                // Ưu tiên né vòng qua phía sau lưng hướng đi của người
-                if (nearestPedDir > 0) // Người đi sang phải
+                if (nearestPedDir > 0 && canGoLeft)
                 {
-                    if (canGoLeft) { obstacleEvasionSteer = -0.45f; isEvadingObstacle = true; }
-                    else if (nearestPedRelX < -0.8f && canGoRight) { obstacleEvasionSteer = 0.45f; isEvadingObstacle = true; }
+                    targetLaneIndex = currentLaneIndex - 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
                 }
-                else if (nearestPedDir < 0) // Người đi sang trái
+                else if (nearestPedDir < 0 && canGoRight)
                 {
-                    if (canGoRight) { obstacleEvasionSteer = 0.45f; isEvadingObstacle = true; }
-                    else if (nearestPedRelX > 0.8f && canGoLeft) { obstacleEvasionSteer = -0.45f; isEvadingObstacle = true; }
-                }
-                else
-                {
-                    if (nearestPedRelX >= 0f && canGoLeft) { obstacleEvasionSteer = -0.45f; isEvadingObstacle = true; }
-                    else if (nearestPedRelX < 0f && canGoRight) { obstacleEvasionSteer = 0.45f; isEvadingObstacle = true; }
-                }
-
-                if (Mathf.Abs(nearestPedRelX) > 1.8f) isEvadingObstacle = true;
-            }
-            // Tình huống B: Vật cản là xe phía trước đi chậm/dừng
-            else if (hasFrontVehicleObstacle)
-            {
-                // Nếu cả 2 bên đều trống: Ưu tiên vượt trái nếu không ở sát lề trái, ngược lại vượt phải
-                if (canGoLeft && canGoRight)
-                {
-                    obstacleEvasionSteer = (currentPosX > -1.2f) ? -0.45f : 0.45f;
-                    isEvadingObstacle = true;
+                    targetLaneIndex = currentLaneIndex + 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
                 }
                 else if (canGoLeft)
                 {
-                    obstacleEvasionSteer = -0.45f; // Chuyển làn né sang trái
-                    isEvadingObstacle = true;
+                    targetLaneIndex = currentLaneIndex - 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
                 }
                 else if (canGoRight)
                 {
-                    obstacleEvasionSteer = 0.45f; // Chuyển làn né sang phải
-                    isEvadingObstacle = true;
+                    targetLaneIndex = currentLaneIndex + 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
+                }
+            }
+            else if (hasStoppedVehicleObstacle || wantsToOvertake)
+            {
+                if (canGoLeft && canGoRight)
+                {
+                    int chosenLane = (currentLaneIndex == 1) ? 0 : 1;
+                    targetLaneIndex = chosenLane;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
+                }
+                else if (canGoLeft)
+                {
+                    targetLaneIndex = currentLaneIndex - 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
+                }
+                else if (canGoRight)
+                {
+                    targetLaneIndex = currentLaneIndex + 1;
+                    targetLaneX = laneCenters[targetLaneIndex];
+                    isChangingLane = true;
+                    laneChangeCooldownTimer = 4.0f;
+                }
+            }
+        }
+        else
+        {
+            if (Mathf.Abs(currentPosX - targetLaneX) < 0.25f)
+            {
+                isChangingLane = false;
+                currentLaneIndex = targetLaneIndex;
+                if (lightsController != null) lightsController.SetTurnSignal(TurnSignal.None);
+            }
+            else
+            {
+                if (lightsController != null)
+                {
+                    if (targetLaneX < currentPosX) lightsController.SetTurnSignal(TurnSignal.Left);
+                    else lightsController.SetTurnSignal(TurnSignal.Right);
                 }
             }
         }
 
-        float steering = isEvadingObstacle && Mathf.Abs(obstacleEvasionSteer) > 0.01f ? obstacleEvasionSteer : sideEvasionSteer;
+        // ===================================================================================
+        // 3. ĐIỀU KHIỂN GA VÀ PHANH (INTELLIGENT DRIVER MODEL - IDM):
+        // KHÔNG BAO GIỜ PHANH DỪNG XE XUỐNG 0 NẾU XE PHÍA TRƯỚC ĐANG CHẠY BÌNH THƯỜNG!
+        // ===================================================================================
         float throttle = 0f;
 
-        // -----------------------------------------------------------------------------------
-        // 3. ĐIỀU KHIỂN GA VÀ PHANH (INTELLIGENT DRIVER MODEL + DYNAMIC CLOSING SPEED):
-        // - Tính toán khoảng cách an toàn mong muốn IDM s*(v, Δv) gồm:
-        //   + Khoảng cách tĩnh tối thiểu s0 = 4.5m
-        //   + Khoảng cách theo thời gian phản xạ (Headway Time) = v * T
-        //   + Khoảng cách động theo vận tốc tiếp cận (Closing Speed Term) = (v * Δv) / (2 * sqrt(a*b))
-        // - Khi có xe phía trước: Bắt đầu hãm phanh mượt mà từ xa (35-40m) nếu đang lao nhanh tới
-        // - Khi né chướng ngại vật: Bắt buộc hãm tốc nếu thân xe chưa tách làn hẳn, ngăn đâm đuôi
-        // -----------------------------------------------------------------------------------
         float minGap = 4.5f;
         float headwayTime = 1.35f / Mathf.Clamp(hurryFactor, 0.8f, 1.25f);
         float dynamicGap = 0f;
         if (closingSpeed > 0.05f)
         {
-            // Thành phần động lực học IDM: phụ thuộc trực tiếp vào vận tốc tiếp cận closing speed
             dynamicGap = (currentSpeed * closingSpeed) / (2f * Mathf.Sqrt(maxAcceleration * 4.0f));
         }
 
         float desiredGap = minGap + (currentSpeed * headwayTime) + dynamicGap;
-        if (isFrontCarBraking) desiredGap += Mathf.Max(5.0f, currentSpeed * 0.6f);
-        if (frontCarTurnSignal != TurnSignal.None) desiredGap += 2.0f;
+        if (isFrontCarBraking) desiredGap += Mathf.Max(5.0f, currentSpeed * 0.5f);
+        if (frontCarTurnSignal != TurnSignal.None) desiredGap += 1.5f;
 
-        if (hasObstacleAhead)
+        // TRƯỜNG HỢP 1: CÓ NGƯỜI ĐI BỘ QUA ĐƯỜNG
+        if (hasPedestrianObstacle)
         {
-            if (isEvadingObstacle)
+            if (isChangingLane)
             {
-                // Kiểm tra xem thân xe đã né dạt hẳn sang làn trống bên cạnh chưa
-                float frontRelX = (frontVehicleObj != null) ? (frontVehicleObj.transform.position.x - transform.position.x) : 99f;
-                bool isClearedLaterally = (frontVehicleObj == null) || (Mathf.Abs(frontRelX) > 1.35f);
-
-                if (!isClearedLaterally && distanceToFront < desiredGap)
+                float safeEvasionSpeed = Mathf.Min(effectiveTargetSpeed, 8.5f);
+                throttle = (currentSpeed > safeEvasionSpeed) ? -0.2f : 0.3f;
+            }
+            else
+            {
+                float safeStopGap = 4.0f + (currentSpeed * 0.7f);
+                if (nearestPedDist > safeStopGap)
                 {
-                    // Đang bẻ lái nhưng thân xe vẫn còn nằm trực diện trên làn xe trước:
-                    // BẮT BUỘC HÃM PHANH / GIẢM TỐC, TUYỆT ĐỐI KHÔNG TĂNG GA ĐÂM ĐUÔI!
-                    if (distanceToFront < 6.5f || currentSpeed > leaderSpeed + 0.5f)
-                    {
-                        throttle = -0.9f;
-                    }
-                    else
-                    {
-                        throttle = Mathf.Clamp((leaderSpeed - currentSpeed) / 3.0f, -0.6f, 0.05f);
-                    }
+                    float gapRatio = (nearestPedDist - safeStopGap) / safeStopGap;
+                    throttle = Mathf.Clamp(gapRatio * 0.5f - 0.5f, -1.0f, 0.1f);
                 }
                 else
                 {
-                    // Đã tách làn thành công hoặc cự ly phía trước còn thoáng: Duy trì ga lướt vượt an toàn
-                    float safeEvasionSpeed = Mathf.Min(effectiveTargetSpeed, 10.0f);
-                    if (currentSpeed > safeEvasionSpeed)
-                    {
-                        throttle = -0.2f;
-                    }
-                    else
-                    {
-                        throttle = 0.35f;
-                    }
+                    throttle = -1.0f; // Phanh đứng lại nhường người đi bộ
                 }
-
-                // Tự động bật xi nhan cảnh báo về phía chuyển làn né
-                if (lightsController != null)
+            }
+        }
+        // TRƯỜNG HỢP 2: XE TRƯỚC BỊ DỪNG HẲN / SỰ CỐ TĨNH (< 2.0 m/s)
+        else if (hasStoppedVehicleObstacle)
+        {
+            if (isChangingLane)
+            {
+                if (distanceToFront < 6.5f)
                 {
-                    if (obstacleEvasionSteer < -0.05f) lightsController.SetTurnSignal(TurnSignal.Left);
-                    else if (obstacleEvasionSteer > 0.05f) lightsController.SetTurnSignal(TurnSignal.Right);
+                    throttle = -0.9f;
+                }
+                else
+                {
+                    throttle = (currentSpeed > 7.0f) ? -0.2f : 0.35f;
                 }
             }
             else
             {
-                // Không có làn trống để né: Phanh an toàn dừng lại nhường đường
-                float minObstacleDist = hasPedestrianObstacle ? nearestPedDist : distanceToFront;
-                float safeStopGap = 4.5f + (currentSpeed * 0.8f);
-
-                if (minObstacleDist > safeStopGap)
+                if (distanceToFront > 5.5f)
                 {
-                    float gapRatio = (minObstacleDist - safeStopGap) / safeStopGap;
-                    throttle = Mathf.Clamp(gapRatio * 0.6f - 0.6f, -1.0f, 0.1f);
+                    float gapRatio = (distanceToFront - 4.5f) / Mathf.Max(2.0f, distanceToFront);
+                    throttle = Mathf.Clamp(gapRatio * 0.6f - 0.7f, -1.0f, -0.1f);
                 }
                 else
                 {
-                    throttle = -1.0f; // Phanh đứng lại an toàn
+                    throttle = -1.0f; // Dừng lại an toàn
                 }
             }
         }
+        // TRƯỜNG HỢP 3: ĐƯỜNG PHÍA TRƯỚC THÔNG THOÁNG
         else if (isOpenRoadAhead)
         {
             if (currentSpeed < effectiveTargetSpeed * 0.98f)
@@ -575,48 +637,43 @@ public class AIFVehicleAgent : MonoBehaviour
                 throttle = 0.12f;
             }
         }
+        // TRƯỜNG HỢP 4: BÁM ĐUÔI XE ĐANG CHẠY BÌNH THƯỜNG (CAR-FOLLOWING)
+        // DUY TRÌ TỐC ĐỘ THEO XE TRƯỚC, TUYỆT ĐỐI KHÔNG DỪNG XE KHI XE TRƯỚC Ở XA!
         else
         {
-            // Bám đuôi xe phía trước với khoảng cách IDM động
-            if (distanceToFront > desiredGap * 1.3f)
+            if (distanceToFront > desiredGap * 1.25f)
             {
+                // Cự ly còn xa: Tăng ga tiến lại gần khoảng cách an toàn
                 float gapRatio = (distanceToFront - desiredGap) / desiredGap;
-                throttle = Mathf.Clamp(gapRatio * 0.8f, 0.05f, 0.85f);
+                throttle = Mathf.Clamp(gapRatio * 0.7f, 0.15f, 0.85f);
             }
             else if (distanceToFront > desiredGap)
             {
-                // Khớp tốc độ với xe trước để duy trì cự ly ổn định
-                if (currentSpeed > leaderSpeed + 0.3f)
-                {
-                    throttle = Mathf.Clamp((leaderSpeed - currentSpeed) / 3.5f, -0.5f, 0f);
-                }
-                else
-                {
-                    throttle = 0.15f;
-                }
+                // Đang trong cự ly lý tưởng: Khớp tốc độ với xe trước để duy trì cự ly ổn định
+                float speedDiff = leaderSpeed - currentSpeed;
+                throttle = Mathf.Clamp(speedDiff / 2.5f + 0.10f, -0.35f, 0.45f);
             }
             else
             {
-                // Quá gần hoặc khoảng cách bị thu hẹp: Phanh tỷ lệ với khoảng cách thiếu hụt
-                float gapDeficit = (desiredGap - distanceToFront) / Mathf.Max(2.0f, desiredGap);
-                throttle = Mathf.Clamp(-0.4f - gapDeficit * 0.8f, -1.0f, -0.1f);
+                // Cự ly bị thu hẹp dưới desiredGap: Phanh giảm tốc tỷ lệ thuận với độ thiếu hụt
+                float deficit = (desiredGap - distanceToFront) / Mathf.Max(2.0f, desiredGap);
+                throttle = Mathf.Clamp(-0.35f - deficit * 0.75f, -1.0f, -0.05f);
             }
 
             if (isFrontCarBraking && distanceToFront < desiredGap * 1.25f)
             {
-                throttle = Mathf.Min(throttle, -0.8f);
+                throttle = Mathf.Min(throttle, -0.75f);
             }
         }
 
-        // HARD EMERGENCY REAR-END OVERRIDE (PHANH KHẨN CẤP CHỐNG ĐÂM ĐUÔI XE TRƯỚC)
-        if (frontVehicleObj != null && distanceToFront < 7.5f)
+        // HARD EMERGENCY OVERRIDE TRÁNH ĐÂM ĐUÔI XE TRƯỚC:
+        if (frontVehicleObj != null && distanceToFront < 7.0f)
         {
             throttle = -1.0f;
             if (lightsController != null) lightsController.SetBraking(true);
 
-            if (distanceToFront < 4.8f)
+            if (distanceToFront < 4.5f)
             {
-                // Cự ly cực cận: Triệt tiêu tốc độ dư thừa ngay lập tức
                 currentSpeed = Mathf.Min(currentSpeed, leaderSpeed);
                 if (currentSpeed > 0.2f && leaderSpeed <= 0.1f)
                 {
@@ -635,11 +692,27 @@ public class AIFVehicleAgent : MonoBehaviour
         float accel = throttle * effectiveMaxAccel;
         currentSpeed = Mathf.Clamp(currentSpeed + accel * dt, 0f, effectiveTargetSpeed * 1.15f);
 
-        // Lực né rào chắn an toàn: chỉ kích hoạt khi xe thực sự đi sát mép rào (|X| >= 3.35m)
+        // ===================================================================================
+        // 4. ĐIỀU KHIỂN ĐÁNH LÁI (LANE CENTERING & PROACTIVE SIDE REPULSION):
+        // ===================================================================================
+        float laneOffset = targetLaneX - currentPosX;
+        float laneSteer = Mathf.Clamp(laneOffset * 0.65f, -0.55f, 0.55f);
+
+        float sideSteer = 0f;
+        if (hasCarOnRight && (targetLaneX <= currentPosX + 0.15f))
+        {
+            float urgency = Mathf.Clamp01((sideScanDistance - distToCarRight) / sideScanDistance);
+            sideSteer = -urgency * 0.35f;
+        }
+        else if (hasCarOnLeft && (targetLaneX >= currentPosX - 0.15f))
+        {
+            float urgency = Mathf.Clamp01((sideScanDistance - distToCarLeft) / sideScanDistance);
+            sideSteer = urgency * 0.35f;
+        }
+
         float distToLeftBarrier = transform.position.x - (-maxSafeRoadX);
         float distToRightBarrier = maxSafeRoadX - transform.position.x;
         float barrierSafetyMargin = 0.75f;
-
         float barrierRepulsion = 0f;
         if (distToLeftBarrier < barrierSafetyMargin)
         {
@@ -650,24 +723,15 @@ public class AIFVehicleAgent : MonoBehaviour
             barrierRepulsion -= Mathf.Clamp01((barrierSafetyMargin - distToRightBarrier) / barrierSafetyMargin);
         }
 
-        if (!isOpenRoadAhead && Mathf.Abs(barrierRepulsion) > 0.01f)
-        {
-            steering = Mathf.Clamp(steering + barrierRepulsion * 1.2f, -1f, 1f);
-        }
+        float steering = Mathf.Clamp(laneSteer + sideSteer + barrierRepulsion * 1.2f, -0.65f, 0.65f);
 
-        // -----------------------------------------------------------------------------------
-        // 3. HỆ THỐNG ƯU TIÊN TÁCH XE & TÁCH LỀ ĐƯỜNG (SEPARATION & RECOVERY SYSTEM)
-        // - Với các xe đang đâm vào nhau: Ưu tiên tách 2 xe ra trước
-        // - Với các xe va vào lề đường: Ưu tiên tách ra khỏi lề đường
-        // -----------------------------------------------------------------------------------
+        // Hệ thống tách va chạm (Separation & Recovery)
         if (vehicleCollisionTimer > 0f) vehicleCollisionTimer -= dt;
         else { isCollidingWithVehicle = false; vehicleSeparationVector = Vector3.zero; }
 
         if (barrierCollisionTimer > 0f) barrierCollisionTimer -= dt;
         else { isCollidingWithBarrier = false; barrierSeparationVector = Vector3.zero; }
 
-        // Kiểm tra chủ động khoảng cách với lề đường (chỉ kích hoạt khi xe trượt sát mép rào |X| >= 3.85m)
-        currentPosX = transform.position.x;
         bool isNearCurb = Mathf.Abs(currentPosX) >= (maxSafeRoadX - 0.25f);
         if (isNearCurb)
         {
@@ -681,13 +745,10 @@ public class AIFVehicleAgent : MonoBehaviour
         Vector3 vehicleSeparation = Vector3.zero;
         Vector3 curbSeparation = Vector3.zero;
 
-        // A. Ưu tiên tách 2 xe đâm vào nhau:
         if (isCollidingWithVehicle || vehicleCollisionTimer > 0f)
         {
-            // Tách theo phương dọc (Z)
             if (vehicleSeparationVector.z < -0.1f)
             {
-                // Xe sau phanh khẩn cấp và triệt tiêu tốc độ tiến tới để KHÔNG đâm xuyên xe trước
                 throttle = -1.0f;
                 currentSpeed = 0f;
                 vehicleSeparation.z += vehicleSeparationVector.z * (vehicleSeparationSpeed * dt);
@@ -695,12 +756,10 @@ public class AIFVehicleAgent : MonoBehaviour
             }
             else if (vehicleSeparationVector.z > 0.1f)
             {
-                // Xe trước nhích nhẹ nhàng thoát hiểm (+2.5m/s), không phóng vọt đi xa
                 currentSpeed = Mathf.Max(currentSpeed, 3.0f);
                 vehicleSeparation.z += vehicleSeparationVector.z * (vehicleSeparationSpeed * dt);
             }
 
-            // Tách theo phương ngang (X)
             if (Mathf.Abs(vehicleSeparationVector.x) > 0.1f)
             {
                 vehicleSeparation.x += vehicleSeparationVector.x * (vehicleSeparationSpeed * dt);
@@ -708,7 +767,6 @@ public class AIFVehicleAgent : MonoBehaviour
             }
         }
 
-        // B. Ưu tiên tách ra khỏi lề đường:
         if (isCollidingWithBarrier || barrierCollisionTimer > 0f || isNearCurb)
         {
             float curbSide = Mathf.Sign(currentPosX);
@@ -721,24 +779,17 @@ public class AIFVehicleAgent : MonoBehaviour
             steering = awayFromCurbDir * Mathf.Lerp(0.5f, 0.9f, curbPenetration);
         }
 
-        // C. Kiểm soát an toàn tương hỗ: Xe tách khỏi xe khác KHÔNG ĐƯỢC BỊ ĐẨY ĐÂM VÀO LỀ ĐƯỜNG
         if (currentPosX < -3.5f && vehicleSeparation.x < 0f) vehicleSeparation.x = 0f;
         if (currentPosX > 3.5f && vehicleSeparation.x > 0f) vehicleSeparation.x = 0f;
 
         Vector3 totalSeparation = vehicleSeparation + curbSeparation;
 
-        // Khống chế góc quay yaw: luôn giữ xe tiến thẳng theo trục Z (+Z) khi đường trống và không né sườn
+        // Góc quay mong muốn & Khống chế góc quay
         float currentYaw = transform.eulerAngles.y;
         if (currentYaw > 180f) currentYaw -= 360f;
 
-        bool isEvadingSide = Mathf.Abs(sideEvasionSteer) > 0.05f;
-
-        // Góc quay mong muốn: khi đường trống phía trước và không cần né xe sườn, KHÓA CỨNG = 0 ĐỘ (ĐI THẲNG TUYỆT ĐỐI)
-        float desiredYaw = (isOpenRoadAhead && !isEvadingSide && !isCollidingWithVehicle && !isCollidingWithBarrier && !isNearCurb)
-            ? 0f
-            : Mathf.Clamp(steering * maxHeadingAngle, -maxHeadingAngle, maxHeadingAngle);
-
-        float newYaw = Mathf.MoveTowardsAngle(currentYaw, desiredYaw, 45f * dt);
+        float desiredYaw = Mathf.Clamp(steering * maxHeadingAngle, -maxHeadingAngle, maxHeadingAngle);
+        float newYaw = Mathf.MoveTowardsAngle(currentYaw, desiredYaw, 40f * dt);
         newYaw = Mathf.Clamp(newYaw, -maxHeadingAngle, maxHeadingAngle);
 
         Quaternion safeRot = Quaternion.Euler(0f, newYaw, 0f);
@@ -749,29 +800,17 @@ public class AIFVehicleAgent : MonoBehaviour
             rb.angularVelocity = Vector3.zero;
         }
 
-        // -----------------------------------------------------------------------------------
-        // 4. CHUYỂN ĐỘNG VẬT LÝ VẬT THỂ CỨNG (RIGIDBODY PHYSICAL VELOCITY):
-        // Tuyệt đối KHÔNG dùng MovePosition cưỡng bức teleport xe vào nhau gây hiện tượng đi xuyên qua nhau.
-        // Điều khiển hoàn toàn qua Rigidbody linearVelocity với ContinuousDynamic collision detection.
-        // -----------------------------------------------------------------------------------
+        // Chuyển động vật lý
         Vector3 targetVelocity = transform.forward * currentSpeed;
         targetVelocity.y = 0f;
-
-        // Tăng cường độ dịch chuyển ngang khi chủ động chuyển làn né vật cản
-        if (isEvadingObstacle && Mathf.Abs(obstacleEvasionSteer) > 0.05f)
-        {
-            targetVelocity.x += obstacleEvasionSteer * 2.2f;
-        }
 
         if (dt > 0.0001f)
         {
             Vector3 sepVel = totalSeparation / dt;
             targetVelocity.x += Mathf.Clamp(sepVel.x, -curbSeparationSpeed, curbSeparationSpeed);
-            // Chỉ bù vận tốc tách vừa đủ (tối đa 0.6 m/s) để tránh bị bật nảy giật bắn ra xa
             targetVelocity.z += Mathf.Clamp(sepVel.z, -0.6f, 0.6f);
         }
 
-        // Nếu xe sau đang va chạm đuôi xe trước: triệt tiêu hoàn toàn vận tốc tiến tới (+Z)
         if (isCollidingWithVehicle && vehicleSeparationVector.z < -0.1f)
         {
             targetVelocity.z = Mathf.Min(0f, targetVelocity.z);
@@ -782,7 +821,6 @@ public class AIFVehicleAgent : MonoBehaviour
             targetVelocity.z = 0f;
         }
 
-        // Triệt tiêu vận tốc hướng ra lề đường khi ở sát mép rào chắn
         if (rb.position.x >= maxSafeRoadX - 0.35f && targetVelocity.x > 0f)
         {
             targetVelocity.x = -curbSeparationSpeed * 0.6f;
@@ -853,7 +891,7 @@ public class AIFVehicleAgent : MonoBehaviour
         // Reset xe nếu đi hết đoạn đường (Loop simulation)
         if (transform.position.z >= 490f)
         {
-            transform.position = new Vector3(transform.position.x, 0.5f, 5f);
+            transform.position = new Vector3(targetLaneX, fixedHeightY, 5f);
             currentSpeed = 5f;
             rb.linearVelocity = transform.forward * 5f;
         }
@@ -1103,5 +1141,44 @@ public class AIFVehicleAgent : MonoBehaviour
     {
         worker?.Dispose();
         worker = null;
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        Vector3 cCenter = new Vector3(transform.position.x, fixedHeightY, transform.position.z);
+        Vector3 fCenter = cCenter + transform.forward * 2.05f;
+
+        // 9 tia thẳng cản trước (Xanh cyan)
+        Gizmos.color = Color.cyan;
+        float[] fOffsets = new float[] { 0f, -0.22f, 0.22f, -0.45f, 0.45f, -0.68f, 0.68f, -0.90f, 0.90f };
+        for (int i = 0; i < fOffsets.Length; i++)
+        {
+            Vector3 o = fCenter + transform.right * fOffsets[i];
+            Gizmos.DrawRay(o, transform.forward * 25f);
+        }
+
+        // 8 tia chéo đón đầu (Vàng)
+        Gizmos.color = Color.yellow;
+        float[] dAngles = new float[] { -60f, -45f, -30f, -15f, 15f, 30f, 45f, 60f };
+        for (int d = 0; d < dAngles.Length; d++)
+        {
+            Vector3 dir = Quaternion.Euler(0f, dAngles[d], 0f) * transform.forward;
+            Gizmos.DrawRay(fCenter, dir * 18f);
+        }
+
+        // 4 điểm quét sườn xe mỗi bên (Tím hồng)
+        Gizmos.color = Color.magenta;
+        float[] sOffsetsZ = new float[] { 1.8f, 0.6f, -0.6f, -1.8f };
+        for (int s = 0; s < sOffsetsZ.Length; s++)
+        {
+            Vector3 lO = cCenter + transform.forward * sOffsetsZ[s] - transform.right * 0.95f;
+            Vector3 rO = cCenter + transform.forward * sOffsetsZ[s] + transform.right * 0.95f;
+            Gizmos.DrawRay(lO, -transform.right * sideScanDistance);
+            Gizmos.DrawRay(rO, transform.right * sideScanDistance);
+        }
+
+        // Đường tim làn mục tiêu (Xanh lá)
+        Gizmos.color = Color.green;
+        Gizmos.DrawLine(new Vector3(targetLaneX, fixedHeightY, transform.position.z - 5f), new Vector3(targetLaneX, fixedHeightY, transform.position.z + 15f));
     }
 }
