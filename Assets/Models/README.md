@@ -60,3 +60,36 @@ DrivingMode currentMode = (DrivingMode)bestMode;
 float accel = results[5] * maxAcceleration;
 float steer = results[6] * 0.45f;
 ```
+
+---
+
+### 3. Hướng dẫn Huấn luyện (Train) và Xuất lại mô hình ONNX
+
+File mã nguồn huấn luyện Python nằm ở thư mục gốc: **`train_decision_agent.py`**.
+
+#### A. Cài đặt môi trường Python:
+Yêu cầu Python 3.9+ cùng các thư viện:
+```bash
+pip install torch numpy onnx
+```
+*(Nếu bạn dùng Conda, có thể kích hoạt môi trường đã cài sẵn: `conda activate mlagents_env`)*
+
+#### B. Thực thi huấn luyện:
+Chạy lệnh sau tại thư mục gốc của dự án:
+```bash
+python train_decision_agent.py
+```
+Hoặc chỉ định đường dẫn Python đầy đủ (trên Windows):
+```powershell
+& "E:\anaconda_envs\mlagents_env\python.exe" train_decision_agent.py
+```
+
+#### C. Quy trình huấn luyện tự động trong script:
+1. **Sinh dữ liệu mô phỏng**: Tạo 120.000 mẫu kịch bản giao thông tổng hợp đầy đủ các ca (đường thoáng, bám đuôi, người qua đường, xe phanh gấp, xe đi song song).
+2. **Huấn luyện đa nhiệm (Multi-task Training)**:
+   - Tổ hợp mất mát: $\text{Loss} = \text{CrossEntropyLoss}(\text{Decision}) + 2.0 \times \text{MSELoss}(\text{Controls})$.
+   - 12 Epochs với Adam Optimizer ($lr = 0.003$), đạt độ chính xác phân loại $> 98\%$.
+3. **Xuất ONNX tương thích Unity**:
+   - Sử dụng `opset_version=13`, bật `do_constant_folding=True`.
+   - Tự động ghi đè file đầu ra trực tiếp vào: `Assets/Models/traffic_aif_agent.onnx`.
+   - Unity sẽ tự động nhận diện thay đổi và re-import asset mà không cần khởi động lại editor.
