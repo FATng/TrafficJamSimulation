@@ -102,7 +102,7 @@ namespace TrafficJamSimulation
             float dur = (duration > 0f) ? duration : collisionRedDuration;
             _redTimer = Mathf.Max(_redTimer, dur);
             ApplyColor(collisionColor, true);
-            Debug.Log($"<color=red><b>[VA CHẠM]</b> {gameObject.name} (Tọa độ: {transform.position}) -> CHUYỂN MÀU ĐỎ RỰC!</color>");
+            Debug.Log($"<color=red><b>[VA CHẠM]</b> {gameObject.name} (Tọa độ: {transform.position}) </color>");
         }
 
         public void ResetColor()

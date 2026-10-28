@@ -35,6 +35,13 @@ namespace TrafficJamSimulation
         [Tooltip("Trạng thái đang dừng chờ xe vượt qua")]
         [SerializeField] private bool isYieldingToVehicle = false;
 
+        [Header("Detour / Bypass Settings (Né vòng qua xe dừng)")]
+        [Tooltip("Tốc độ dịch ngang (trục Z) khi đi vòng qua xe dừng chắn đường (m/s)")]
+        public float detourSpeed = 1.2f;
+
+        [Tooltip("Trạng thái đang dịch trái/phải để vượt qua xe dừng")]
+        [SerializeField] private bool isDetouring = false;
+
         [Header("Crash / Collision Reaction (Tô đỏ và dừng lại)")]
         [Tooltip("Thời gian đứng yên sau khi va chạm với xe (giây)")]
         public float crashPauseDuration = 3.5f;
@@ -55,9 +62,12 @@ namespace TrafficJamSimulation
         [SerializeField] private bool hasCompletedCrossing = false;
 
         private float _baseHeightY = 0.9f;
+        private float _startZ = 0f;
         private float _walkTimer = 0f;
         private float _crashTimer = 0f;
         private float _postCrashGraceTimer = 0f;
+        private float _detourTimer = 0f;
+        private float _detourDirectionZ = 0f;
         private GameObject _lastCollidedVehicle = null;
         private Rigidbody _rb;
         private Renderer _renderer;
@@ -66,6 +76,7 @@ namespace TrafficJamSimulation
 
         public bool HasCompletedCrossing => hasCompletedCrossing;
         public bool IsYieldingToVehicle => isYieldingToVehicle;
+        public bool IsDetouring => isDetouring;
         public bool IsInCrashState => isInCrashState;
 
         private void Awake()
@@ -104,6 +115,7 @@ namespace TrafficJamSimulation
         private void Start()
         {
             _baseHeightY = transform.position.y;
+            _startZ = transform.position.z;
             if (_baseHeightY < 0.1f) _baseHeightY = 0.9f;
             UpdateFacingRotation();
         }
@@ -119,9 +131,12 @@ namespace TrafficJamSimulation
             roadWidth = width;
             targetX = (crossingDirection > 0) ? (roadWidth * 0.5f + 1.2f) : (-roadWidth * 0.5f - 1.2f);
             _baseHeightY = startPos.y;
+            _startZ = startPos.z;
             if (_baseHeightY < 0.1f) _baseHeightY = 0.9f;
             hasCompletedCrossing = false;
             isInCrashState = false;
+            isDetouring = false;
+            _detourTimer = 0f;
             _crashTimer = 0f;
             UpdateFacingRotation();
         }
@@ -178,26 +193,87 @@ namespace TrafficJamSimulation
                 _postCrashGraceTimer -= dt;
             }
 
-            // 2. Dò quét xe phía trước mặt bằng Raycast: nếu có xe đang đi tới hoặc chắn đường thì dừng lại
-            // Nếu đang trong thời gian ân hạn sau va chạm: bỏ qua quét dừng xe để người dứt khoát bước đi thoát kẹt!
+            // 2. Dò quét xe phía trước mặt bằng Raycast:
+            // - Nếu xe đang chạy (speed >= 0.5 m/s): dừng lại nhường đường, tránh đâm vào xe.
+            // - Nếu xe chắn trước mặt ĐÃ DỪNG LẠI (< 0.5 m/s): cho phép tiếp tục đi qua hoặc dịch trái/phải để vòng qua xe!
             if (_postCrashGraceTimer <= 0f)
             {
-                isYieldingToVehicle = ScanForVehiclesAhead();
-                if (isYieldingToVehicle)
+                bool hasVehicleAhead = ScanForVehicles(out bool isStoppedCar, out GameObject carObj, out float hitDist);
+
+                if (hasVehicleAhead)
                 {
-                    // Tạm dừng bước đi, giữ nguyên vị trí, chờ xe chạy qua
-                    return;
+                    if (!isStoppedCar)
+                    {
+                        // XE ĐANG CHẠY: Dừng lại nhường đường an toàn
+                        isYieldingToVehicle = true;
+                        isDetouring = false;
+                        _detourTimer = 0f;
+                        return;
+                    }
+                    else
+                    {
+                        // XE ĐÃ DỪNG LẠI:
+                        // Cho phép người đi đường tiếp tục đi qua hoặc dịch trái/phải để vượt qua!
+                        isYieldingToVehicle = false;
+
+                        // Tạm thời bỏ qua va chạm cứng để người đi qua mượt mà không bị kẹt mép Collider
+                        if (carObj != null)
+                        {
+                            IgnoreCollisionWithVehicle(carObj, 2.5f);
+                        }
+
+                        if (hitDist <= 1.5f)
+                        {
+                            // Xe chắn quá sát ngay trước mặt (<= 1.5m): Kích hoạt dịch trái / dịch phải (theo trục Z)
+                            isDetouring = true;
+                            _detourTimer = 0.9f;
+
+                            float carCenterZ = carObj.transform.position.z;
+                            // Nếu người đang ở phía trước xe (Z >= carCenterZ): dịch tiến (+Z) qua mũi xe
+                            // Nếu người đang ở phía sau xe (Z < carCenterZ): dịch lùi (-Z) qua đuôi xe
+                            _detourDirectionZ = (transform.position.z >= carCenterZ) ? 1.0f : -1.0f;
+                        }
+                        else
+                        {
+                            // Còn khoảng trống (> 1.5m): Tiếp tục đi thẳng băng qua trước hoặc sau xe
+                            if (_detourTimer <= 0f) isDetouring = false;
+                        }
+                    }
+                }
+                else
+                {
+                    isYieldingToVehicle = false;
+                    if (_detourTimer <= 0f) isDetouring = false;
                 }
             }
             else
             {
                 isYieldingToVehicle = false;
+                if (_detourTimer <= 0f) isDetouring = false;
             }
 
-            // 3. Di chuyển ngang qua đường theo trục X
+            // 3. Di chuyển người đi bộ:
             _walkTimer += dt;
             Vector3 pos = transform.position;
+
+            // Bước ngang qua đường (trục X)
             pos.x += crossingDirection * walkingSpeed * dt;
+
+            // Xử lý dịch trái/phải (trục Z) khi đi vòng qua xe dừng
+            if (_detourTimer > 0f)
+            {
+                _detourTimer -= dt;
+                pos.z += _detourDirectionZ * detourSpeed * dt;
+            }
+            else
+            {
+                isDetouring = false;
+                // Sau khi đã vượt qua xe, dần dần trở lại đường đi ban đầu
+                if (Mathf.Abs(pos.z - _startZ) > 0.05f)
+                {
+                    pos.z = Mathf.MoveTowards(pos.z, _startZ, detourSpeed * 0.4f * dt);
+                }
+            }
 
             // 4. Hiệu ứng nhấp nhô nhẹ mô phỏng nhịp bước chân
             float bobOffset = Mathf.Sin(_walkTimer * stepFrequency * Mathf.PI) * stepBobAmplitude;
@@ -220,37 +296,81 @@ namespace TrafficJamSimulation
         }
 
         /// <summary>
-        /// Bắn các tia Raycast theo hướng nhìn của người đi bộ để phát hiện xe ô tô cắt ngang
+        /// Bắn các tia Raycast hình quạt theo hướng nhìn của người đi bộ để phát hiện xe ô tô cắt ngang.
+        /// Đồng thời phân loại xe đang di chuyển hay xe đã dừng lại để người chủ động ứng xử bằng code logic.
         /// </summary>
-        private bool ScanForVehiclesAhead()
+        private bool ScanForVehicles(out bool isStoppedCar, out GameObject detectedCar, out float hitDist)
         {
+            isStoppedCar = false;
+            detectedCar = null;
+            hitDist = 50f;
+
             Vector3 forwardDir = transform.forward; // Đã hướng về phía di chuyển (+X hoặc -X)
             Vector3 originCenter = transform.position;
             originCenter.y = 0.6f; // Tầm cao thân xe ô tô
 
-            // 3 tia: giữa, chếch trái, chếch phải một góc nhỏ 15 độ để bao quát góc nhìn
-            Vector3[] rayDirs = new Vector3[]
-            {
-                forwardDir,
-                Quaternion.Euler(0, 15f, 0) * forwardDir,
-                Quaternion.Euler(0, -15f, 0) * forwardDir
-            };
+            // 5 tia quét hình quạt: giữa, ±10 độ, ±20 độ để bao quát toàn diện góc nhìn phía trước
+            float[] angles = new float[] { 0f, 10f, -10f, 20f, -20f };
 
-            for (int i = 0; i < rayDirs.Length; i++)
+            for (int i = 0; i < angles.Length; i++)
             {
-                if (Physics.Raycast(originCenter, rayDirs[i], out RaycastHit hit, vehicleLookAheadDistance))
+                Vector3 rayDir = Quaternion.Euler(0, angles[i], 0) * forwardDir;
+                if (Physics.Raycast(originCenter, rayDir, out RaycastHit hit, vehicleLookAheadDistance))
                 {
                     if (hit.collider.gameObject != gameObject)
                     {
                         if (hit.collider.CompareTag("Vehicle") || hit.collider.GetComponentInParent<AIFVehicleAgent>() != null)
                         {
-                            return true; // Có xe trước mặt, dừng lại nhường đường
+                            if (hit.distance < hitDist)
+                            {
+                                hitDist = hit.distance;
+                                detectedCar = hit.collider.gameObject;
+                            }
                         }
                     }
                 }
             }
 
+            if (detectedCar != null)
+            {
+                // Kiểm tra vận tốc di chuyển của xe phát hiện được
+                float carSpeed = 0f;
+                var carAgent = detectedCar.GetComponentInParent<AIFVehicleAgent>();
+                if (carAgent != null)
+                {
+                    carSpeed = carAgent.currentSpeed;
+                }
+                else
+                {
+                    var rb = detectedCar.GetComponentInParent<Rigidbody>();
+                    if (rb != null) carSpeed = rb.linearVelocity.magnitude;
+                }
+
+                // Nếu xe chạy rất chậm hoặc đã dừng hẳn (< 0.5 m/s)
+                if (carSpeed < 0.5f)
+                {
+                    isStoppedCar = true;
+                }
+
+                return true;
+            }
+
             return false;
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            Vector3 forwardDir = transform.forward;
+            Vector3 originCenter = transform.position;
+            originCenter.y = 0.6f;
+
+            Gizmos.color = isYieldingToVehicle ? Color.red : (isDetouring ? Color.magenta : Color.green);
+            float[] angles = new float[] { 0f, 10f, -10f, 20f, -20f };
+            for (int i = 0; i < angles.Length; i++)
+            {
+                Vector3 rayDir = Quaternion.Euler(0, angles[i], 0) * forwardDir;
+                Gizmos.DrawRay(originCenter, rayDir * vehicleLookAheadDistance);
+            }
         }
 
         /// <summary>
