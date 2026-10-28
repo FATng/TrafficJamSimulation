@@ -197,13 +197,15 @@ public class AIFVehicleAgent : MonoBehaviour
     }
 
     /// <summary>
-    /// KIẾN TRÚC PHÂN TẦNG - TẦNG 2: MẠNG NƠ-RON AI THỰC THI CHÍNH SÁCH (NEURAL POLICY)
-    /// Dự đoán đồng thời CẢ GIA TỐC VÀ GÓC LÁI từ mô hình học sâu traffic_aif_agent.onnx qua Unity Sentis.
-    /// Khớp chính xác với cấu trúc Tensor của mô hình 9 inputs -> 2 outputs:
+    /// KIẾN TRÚC PHÂN TẦNG - TẦNG 1 & TẦNG 2: MẠNG NƠ-RON AI RA QUYẾT ĐỊNH & THỰC THI CHÍNH SÁCH (NEURAL DECISION & POLICY)
+    /// Dự đoán đồng thời:
+    ///   - Tầng 1: Lựa chọn hành vi bậc cao (DrivingMode) thông qua bộ phân loại thần kinh 5 lớp (Classification Head)
+    ///   - Tầng 2: Gia tốc (Acceleration) & Góc lái (Steering) qua bộ chấp hành liên tục (Control Head)
+    /// Cấu trúc Tensor của mô hình traffic_aif_agent.onnx:
     ///   - Input Tensor [1, 9]: [normSpeed, normGap, normRelSpeed, speedError, roadOffset, sideBalance, isLeaderBraking, isPedAhead, trafficDensity]
-    ///   - Output Tensor [1, 2]: [0: normalized_accel, 1: normalized_steer]
+    ///   - Output Tensor [1, 7]: [0..4: decision_logits (5 classes), 5: normalized_accel, 6: normalized_steer]
     /// </summary>
-    public (float accel, float steer) PredictAIPolicy(
+    public (DrivingMode mode, float accel, float steer) PredictAIPolicy(
         float speed,
         float gap,
         float relSpeed,
@@ -217,10 +219,10 @@ public class AIFVehicleAgent : MonoBehaviour
         if (worker == null)
         {
             float fallbackAccel = (gap < 4.0f) ? -4.0f : ((speed < targetSpd) ? 1.5f : 0f);
-            return (fallbackAccel, 0f);
+            return (DrivingMode.FreeFlow, fallbackAccel, 0f);
         }
 
-        // 9 giá trị quan sát chuẩn hóa khớp chính xác với shape (batch_size, 9) của traffic_aif_agent.onnx
+        // 9 giá trị quan sát chuẩn hóa khớp chính xác với shape (batch_size, 9)
         float normSpeed = Mathf.Clamp01(speed / 30f);
         float normGap = Mathf.Clamp01(gap / 50f);
         float normRelSpeed = Mathf.Clamp(relSpeed / 15f, -1f, 1f);
@@ -243,17 +245,31 @@ public class AIFVehicleAgent : MonoBehaviour
             if (outputTensor != null)
             {
                 float[] results = outputTensor.DownloadToArray();
-                if (results != null && results.Length >= 2)
+                if (results != null && results.Length >= 7)
                 {
-                    // Output qua Tanh [-1.0, 1.0]
+                    // Tầng 1: Argmax phân loại ra quyết định hành vi tối ưu từ AI
+                    int bestModeIdx = 0;
+                    float maxLogit = results[0];
+                    for (int i = 1; i < 5; i++)
+                    {
+                        if (results[i] > maxLogit)
+                        {
+                            maxLogit = results[i];
+                            bestModeIdx = i;
+                        }
+                    }
+                    DrivingMode predictedMode = (DrivingMode)bestModeIdx;
+
+                    // Tầng 2: Gia tốc & Góc lái
+                    float accel = Mathf.Clamp(results[5] * maxAcceleration, -8.0f, 4.0f);
+                    float steer = Mathf.Clamp(results[6] * 0.45f, -0.45f, 0.45f);
+                    return (predictedMode, accel, steer);
+                }
+                else if (results != null && results.Length >= 2)
+                {
                     float accel = Mathf.Clamp(results[0] * maxAcceleration, -8.0f, 4.0f);
                     float steer = Mathf.Clamp(results[1] * 0.45f, -0.45f, 0.45f);
-                    return (accel, steer);
-                }
-                else if (results != null && results.Length == 1)
-                {
-                    float accel = Mathf.Clamp(results[0] * maxAcceleration, -8.0f, 4.0f);
-                    return (accel, 0f);
+                    return (DrivingMode.FreeFlow, accel, steer);
                 }
             }
         }
@@ -262,7 +278,7 @@ public class AIFVehicleAgent : MonoBehaviour
             Debug.LogError($"[AIFVehicleAgent] Lỗi suy luận AI Sentis: {ex.Message}");
         }
 
-        return (0f, 0f);
+        return (DrivingMode.FreeFlow, 0f, 0f);
     }
 
     /// <summary>
@@ -590,30 +606,7 @@ public class AIFVehicleAgent : MonoBehaviour
         bool hasSlowVehicleObstacle = (frontVehicleObj != null && !isLeaderStopped && distanceToFront < 14.0f && leaderSpeed < effectiveTargetSpeed * 0.70f);
         bool hasObstacleAhead = hasPedestrianObstacle || hasStoppedVehicleObstacle || hasSlowVehicleObstacle;
 
-        // ===================================================================================
-        // KIẾN TRÚC PHÂN TẦNG - TẦNG 1: BỘ CHỌN HÀNH VI BẬC CAO (HIGH-LEVEL BEHAVIOR MODE)
-        // Phân loại ngữ cảnh giao thông để kích hoạt chiến lược lái xe thích ứng tối ưu
-        // ===================================================================================
-        if (frontVehicleObj != null && distanceToFront < 3.2f)
-        {
-            currentDrivingMode = DrivingMode.EmergencyShield;
-        }
-        else if (hasPedestrianObstacle && !isChangingLane && nearestPedDist < 5.0f)
-        {
-            currentDrivingMode = DrivingMode.SafeYielding;
-        }
-        else if (isChangingLane || (hasObstacleAhead && laneChangeCooldownTimer <= 0f))
-        {
-            currentDrivingMode = DrivingMode.ActiveEvasion;
-        }
-        else if (frontVehicleObj != null && distanceToFront < 22.0f)
-        {
-            currentDrivingMode = DrivingMode.CarFollowing;
-        }
-        else
-        {
-            currentDrivingMode = DrivingMode.FreeFlow;
-        }
+        // [TẦNG 1: Lựa chọn hành vi sẽ do AI Decision Head quyết định trực tiếp bên dưới]
 
         // KHI PHÍA TRƯỚC CÓ VẬT CẢN: ƯU TIÊN LÁCH SANG KHOẢNG TRỐNG BÊN CẠNH
         if (hasObstacleAhead)
@@ -779,7 +772,8 @@ public class AIFVehicleAgent : MonoBehaviour
         // KIẾN TRÚC PHÂN TẦNG - TẦNG 2: MẠNG NƠ-RON AI THỰC THI CHÍNH SÁCH (NEURAL POLICY)
         // Nạp vector 9 chiều quan sát toàn diện và dự đoán đồng thời CẢ GIA TỐC VÀ GÓC LÁI
         // ===================================================================================
-        var (predictedAccel, predictedSteer) = PredictAIPolicy(
+        // Dự đoán đồng thời CẢ HÀNH VI BẬC CAO (TẦNG 1), GIA TỐC VÀ GÓC LÁI (TẦNG 2)
+        var (aiSelectedMode, predictedAccel, predictedSteer) = PredictAIPolicy(
             currentSpeed,
             effectiveGap,
             relSpeed,
@@ -790,6 +784,19 @@ public class AIFVehicleAgent : MonoBehaviour
             isFrontCarBraking,
             hasPedestrianObstacle
         );
+
+        // TẦNG 1: AI RA QUYẾT ĐỊNH HÀNH VI (DECISION HEAD)
+        currentDrivingMode = aiSelectedMode;
+
+        // Lớp bảo hiểm an toàn (Safety Supervisor) tại Tầng 3 giữ quyền can thiệp tuyệt đối khi khẩn cấp:
+        if (frontVehicleObj != null && distanceToFront < 3.2f)
+        {
+            currentDrivingMode = DrivingMode.EmergencyShield;
+        }
+        else if (hasPedestrianObstacle && !isChangingLane && nearestPedDist < 4.0f)
+        {
+            currentDrivingMode = DrivingMode.SafeYielding;
+        }
 
         aiAccelerationOutput = predictedAccel;
         aiSteeringOutput = predictedSteer;

@@ -1,16 +1,19 @@
 # 🚗 Traffic Jam Simulation (Unity 6 + Sentis AI)
 
-> **Mô phỏng dòng giao thông thông minh và hiện tượng kẹt xe (Phantom Jam) trên Unity 6**, kết hợp giữa trí tuệ nhân tạo (Inference Engine qua **Unity Sentis** / **ONNX**), mô hình vật lý bám đuôi kinh điển (**Intelligent Driver Model - IDM**), và bộ điều khiển hành vi phản xạ đa tia (**Multi-Raycast Active Perception & Evasion**).
+> **Mô phỏng dòng giao thông thông minh và hiện tượng kẹt xe (Phantom Jam) trên Unity 6**, kết hợp giữa trí tuệ nhân tạo (Inference Engine qua **Unity Sentis** / **ONNX**), kiến trúc phân tầng ra quyết định và chấp hành (**Hierarchical Architecture**), mạng nơ-ron đa nhiệm (**Multi-Head Decision & Control Network**), và bộ điều khiển hành vi phản xạ đa tia (**Omnidirectional Perception & Active Evasion**).
 
 ---
 
 ## 📌 Mục lục
 - [Giới thiệu tổng quan](#-giới-thiệu-tổng-quan)
+- [Kiến trúc Phân tầng 3 Lớp (Hierarchical Architecture)](#-kiến-trúc-phân-tầng-3-lớp-hierarchical-architecture)
 - [Tính năng nổi bật](#-tính-năng-nổi-bật)
 - [Cấu trúc thư mục & Chức năng các file chính](#-cấu-trúc-thư-mục--chức-năng-các-file-chính)
+- [Đặc tả Mô hình Mạng nơ-ron (.onnx)](#-đặc-tả-mô-hình-mạng-nơ-ron-onnx)
 - [Yêu cầu hệ thống & Hướng dẫn cài đặt](#-yêu-cầu-hệ-thống--hướng-dẫn-cài-đặt)
 - [Hướng dẫn tích hợp Bộ não điều khiển xe vào dự án của bạn](#-hướng-dẫn-tích-hợp-bộ-não-điều-khiển-xe-vào-dự-án-của-bạn)
 - [Cấu hình tham số của Bộ não AIFVehicleAgent](#-cấu-hình-tham-số-của-bộ-não-aifvehicleagent)
+- [Hướng dẫn sử dụng Hệ thống Người qua đường](#-hướng-dẫn-sử-dụng-hệ-thống-người-qua-đường-pedestrian-spawner)
 - [Giấy phép & Tác giả](#-giấy-phép--tác-giả)
 
 ---
@@ -20,58 +23,74 @@
 Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượng vật lý và tâm lý lái xe trong giao thông đường bộ:
 - Hiện tượng **Kẹt xe ma (Phantom Traffic Jams / Stop-and-Go Waves)**: Khi một xe đột ngột đạp phanh nhẹ, sóng dừng phản ứng dây chuyền lan truyền ngược về phía sau đoàn xe tạo thành nút thắt cổ chai dù không có tai nạn hay chướng ngại vật cố định.
 - **Tâm lý tài xế phân hóa (`hurryFactor`)**: Mỗi xe có chỉ số "độ vội" khác nhau (từ từ tốn, giữ khoảng cách xa đến vội vã, bứt tốc nhanh, bám sát).
-- **Bộ não điều khiển xe toàn diện (`AIFVehicleAgent`)**: Vận hành dựa trên mô hình học máy `.onnx` kết hợp hệ thống cảm biến quang học ảo (Raycast đa hướng trước và bên sườn), phản xạ theo tín hiệu đèn hậu của xe trước, tự động né xe đi song song và cơ chế phục hồi va chạm (Separation & Recovery).
+- **Bộ não điều khiển xe toàn diện (`AIFVehicleAgent`)**: Vận hành dựa trên mô hình học máy `.onnx` đa nhiệm (Multi-Head), điều khiển trực tiếp cả **Gia tốc (Acceleration)** và **Góc lái (Steering)**, kết hợp hệ thống cảm biến quang học ảo đa hướng, cơ chế phân tách sườn xe song song và phục hồi sau va chạm.
+
+---
+
+## 🏛 Kiến trúc Phân tầng 3 Lớp (Hierarchical Architecture)
+
+Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn của hệ thống tự hành tiên tiến:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  TẦNG 1: BỘ CHỌN HÀNH VI BẬC CAO (High-Level Decision Head)            │
+│  Mạng Nơ-ron AI tự động phân loại và chọn 1 trong 5 hành vi:           │
+│  - FreeFlow: Đường thông thoáng, duy trì vận tốc và đi thẳng ổn định   │
+│  - CarFollowing: Bám đuôi xe trước theo cự ly và nhịp độ an toàn       │
+│  - ActiveEvasion: Chủ động bẻ lái lách né chướng ngại vật/người qua    │
+│  - SafeYielding: Giảm tốc / dừng nhường người đi bộ qua đường          │
+│  - EmergencyShield: Bảo hiểm phanh khẩn cấp & chống va chạm vật lý     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+┌───────────────────────────────────▼────────────────────────────────────┐
+│  TẦNG 2: MẠNG NƠ-RON AI THỰC THI CHÍNH SÁCH (Neural Control Policy)   │
+│  Input [1, 9] ──► traffic_aif_agent.onnx ──► Output [1, 7]             │
+│  • Output[0..4]: Điểm số phân loại hành vi (argmax -> DrivingMode)     │
+│  • Output[5]: Gia tốc điều khiển liên tục (Continuous Acceleration)    │
+│  • Output[6]: Góc bẻ lái điều khiển liên tục (Continuous Steering)     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+┌───────────────────────────────────▼────────────────────────────────────┐
+│  TẦNG 3: LỚP BẢO VỆ VẬT LÝ & CHẤP HÀNH (Safety Shield & Actuation)    │
+│  - Bộ lọc làm mượt góc lái EMA (Exponential Moving Average)           │
+│  - Lực đẩy phân tách sườn (Side Separation Force) khi 2 xe đi sát nhau│
+│  - Bảo hiểm mép đường / rào chắn (Curb Collision Guard)                │
+│  - Áp dụng vào Rigidbody linearVelocity & rotation                     │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## ✨ Tính năng nổi bật
 
-1. **Bộ não điều khiển xe thông minh (`AIFVehicleAgent`)**:
-   - Tích hợp mạng nơ-ron sâu định dạng **ONNX** chạy trực tiếp trong Unity qua **Unity Sentis**.
-   - **Cự ly bám đuôi gọn gàng, tự nhiên (Compact IDM Headway)**:
-     - Tinh chỉnh cự ly an toàn vừa vặn ($s_0 = 2.2\text{m}$, $T = 0.55\text{s}$), loại bỏ khoảng cách quá rộng ($18-20\text{m}$) trước đây. Xe bám đuôi tự nhiên ở cự ly $6-9\text{m}$ khi di chuyển và dừng sát $2.2\text{m}$ khi xếp hàng.
-     - Ngưỡng phanh khẩn cấp được đưa về $3.2\text{m}$, ngăn chặn triệt để hiện tượng phanh giật đột ngột từ xa.
-   - **Chống hiện tượng 2 xe song song chụm đầu đâm nhau**:
-     - Loại bỏ tia quét góc lệch sang làn bên, bổ sung bộ lọc cự ly ngang $(|\text{relX}| \le 1.05\text{m})$ trên cản trước. Xe tuyệt đối không nhận nhầm xe ở làn bên cạnh thành xe phía trước trong làn của mình.
-   - **Ưu tiên lách khi phía trước có vật cản & bên cạnh trống**:
-     - Khi phát hiện người đi bộ, xe dừng sự cố hoặc xe đi trước chạy chậm cản trở, nếu làn bên cạnh thông thoáng (khoảng hở sườn $\ge 0.50\text{m}$, khoảng trống trước $\ge 7\text{m}$, sau $\ge 5\text{m}$), xe **ưu tiên lách dứt khoát sang làn trống** để duy trì tốc độ di chuyển thông suốt.
-   - **Quy tắc điều khiển 2 xe đi song song**:
-     - **Khi 2 xe đi song song nhưng không gần nhau (khoảng hở sườn $\ge 0.50\text{m}$)**: Ưu tiên đi thẳng tuyệt đối theo tim làn, không lạng lách hay đảo hướng vô cớ.
-     - **Khi 2 xe đi song song sát nhau (khoảng hở sườn $< 0.50\text{m}$)**: Tự động kích hoạt lực đẩy dạt ngang tách xa nhau ra, kết hợp lệch pha vận tốc để phá vỡ thế đi song song, ngăn ngừa va chạm sườn.
-   - **Hệ thống Cảm biến Quang học Đa hướng (Omnidirectional Perception)**:
-     - 9 tia cản trước, 8 tia chéo hình quạt, 4 điểm quét sườn mỗi bên, và cảm biến quét trước/sau làn lân cận.
-     - Tích hợp `OnDrawGizmosSelected` hiển thị trực quan toàn bộ chùm tia trong cửa sổ Scene khi chọn xe.
+1. **AI điều khiển cả Gia tốc và Góc lái (Neural Acceleration & Steering)**:
+   - Toàn bộ quyết định tăng tốc, duy trì vận tốc, hãm phanh và bẻ góc lái vi mô được suy luận đồng thời trực tiếp từ mô hình mạng nơ-ron sâu định dạng ONNX chạy qua **Unity Sentis**.
+   - Bộ lọc làm mượt góc lái theo thời gian (EMA Filter): Loại bỏ hoàn toàn hiện tượng rung lắc, xoay giật góc bánh xe khi đổi hướng.
 
-2. **Mô hình chuẩn mực IDM (`VehicleAgent`)**:
-   - Triển khai thuật toán *Intelligent Driver Model (Treiber et al., 2000)* phục vụ mục đích đo lường (benchmark) và đối chiếu với AI.
+2. **Không gian di chuyển liên tục (Continuous Driving Space - Không ép làn cố định)**:
+   - Xe không bị ép buộc phải bám cứng vào 3 vạch kẻ đường cố định.
+   - Khi cự ly với xe bên cạnh là an toàn ($\ge 0.50\text{m}$), xe tiếp tục đi thẳng ổn định tại vị trí hiện tại.
+   - Khi cần né vật cản, xe lách sang khoảng trống an toàn bên cạnh và tiếp tục hành trình tại tọa độ mới đó mà không cần quay lại làn cũ nếu không cần thiết.
 
-3. **Quản lý mật độ giao thông trường trung bình (`TrafficFieldManager`)**:
-   - Mô hình Mean Field chia đường thành các ô lưới (grid cells), theo dõi mật độ giao thông theo thời gian thực dọc theo trục đường.
+3. **Quy tắc điều khiển 2 xe đi song song thông minh**:
+   - **Khi 2 xe đi song song nhưng cách nhau an toàn ($\ge 0.50\text{m}$)**: Ưu tiên đi thẳng tuyệt đối, triệt tiêu lạng lách vô cớ.
+   - **Khi 2 xe đi song song quá sát nhau ($< 0.50\text{m}$)**: Tầng 3 tự động kích hoạt lực đẩy phân tách sườn (`sideSeparationSteer`) dạt hai xe ra xa nhau để đảm bảo an toàn, sau đó AI tiếp tục giữ quỹ đạo thẳng.
 
-4. **Trình sinh xe thông minh (`TrafficSpawner`)**:
-   - Tự động bố trí xe trên 3 làn đường theo phương thức so le (staggered).
-   - Kiểm tra vật lý OverlapBox trước khi đặt xe, đảm bảo 100% không có xe bị đè hoặc chạm nhau khi xuất phát.
+4. **Hệ thống Cảm biến Quang học Đa hướng (Omnidirectional Perception)**:
+   - 9 tia cản trước quét vật cản và xe dẫn đầu.
+   - 8 tia chéo hình quạt tầm xa đón đầu người đi bộ băng ngang đường từ xa.
+   - 4 điểm quét sườn xe mỗi bên quét xe đi song song và khoảng hở sườn.
+   - Cảm biến quét trước và sau làn lân cận phục vụ lách né an toàn.
+   - Tích hợp `OnDrawGizmosSelected` hiển thị trực quan toàn bộ chùm tia trong Scene view.
 
-5. **Hệ thống Người qua đường & Bộ não né tránh thông minh (Pedestrian Crossing & Active Evasion)**:
-   - **`Pedestrian.prefab`**: Mô hình người đi bộ dạng khối chữ nhật đơn giản (Box/Cube $0.6m 	imes 1.8m 	imes 0.6m$), tối ưu hiệu năng và vật lý chuẩn xác.
-   - **Raycast chống đâm xe của người đi bộ (`PedestrianAgent`)**: Bắn tia quét phía trước mặt theo hướng di chuyển ($2.5m$). Nếu phát hiện có xe ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe chạy qua, ngăn ngừa hoàn toàn tình trạng người đâm vào xe.
-   - **Raycast chéo hình quạt của xe (Diagonal Fan-out Scan)**: Xe trang bị hệ thống 6 tia quét chéo góc ($\pm 15^\circ, \pm 30^\circ, \pm 45^\circ$) với tầm quét xa tới $28m$, tính toán thời gian và tọa độ giao cắt dự kiến của người đi bộ đang băng ngang đường từ xa, tránh việc tới sát mũi xe mới phát hiện.
-   - **Bộ não né tránh có điều kiện & Ưu tiên dừng lại nhường đường (Conditional Evasion & Safe Yielding)**:
-     - **Chỉ chủ động né khi phía trước và phía sau không có xe khác ở gần**: Xe quét kiểm tra cả làn hiện tại và làn lân cận. Nếu có xe bám gần phía trước (< 14m) hoặc phía sau (< 10m), xe **tuyệt đối không chuyển làn đột ngột mà ưu tiên phanh dừng nhường đường** an toàn trước người đi bộ, bật đèn phanh cảnh báo xe sau.
-     - **Lách qua trước mặt người qua đường khi khoảng trống đủ rộng**: Khi khoảng cách giữa vị trí người đi bộ và làn mục tiêu phía trước mặt họ đạt từ >= 2.5m trở lên (người chưa tới gần làn), xe chủ động lách qua **trước mặt người đi bộ** để vượt qua thông suốt.
-     - **Lách qua sau lưng người đi bộ**: Nếu khoảng trống trước mặt không đủ rộng, xe ưu tiên lách ra sau lưng người đi bộ khi khoảng hở an toàn (>= 0.8m).
-     - Nếu cả 2 hướng lách đều bị chắn hoặc không đủ an toàn, xe phanh đứng yên cách người 4.5m và chờ người băng qua xong mới tiếp tục di chuyển.
-   - **Triệt tiêu hiện tượng kéo/dính theo nhau (Physics Decoupling & Zero Friction)**:
-     - Khi xảy ra va chạm giữa người và xe, hệ thống lập tức kích hoạt `Physics.IgnoreCollision` tạm thời giữa toàn bộ Collider của xe và người, đồng thời áp dụng `PhysicsMaterial` triệt tiêu ma sát ($0$ friction).
-     - Khi tiếp tục di chuyển, người đi bộ và xe hoàn toàn không bị kéo rê, đẩy dạt hoặc bám dính vào nhau.
-   - **Cơ chế tách rời sau tai nạn triệt tiêu dừng lặp vô hạn**: Khi va chạm, cả xe và người cùng chuyển đỏ rực và đứng yên 3.5s. Hết thời gian chờ, người đi bộ tự động dạt xa đầu xe ($+2.0\text{m}$ theo hướng qua đường và $+1.5\text{m}$ theo Z) kèm thời gian ân hạn $3.5\text{s}$ để tiếp tục bước dứt khoát; xe nhích lùi $40\text{cm}$ và nhường đường $2.5\text{s}$, loại bỏ hoàn toàn hiện tượng kẹt đông cứng lặp vô tận.
+5. **Hệ thống Người qua đường & Bộ não né tránh thông minh (Pedestrian Crossing & Evasion)**:
+   - **Người đi bộ có cảm biến (`PedestrianAgent`)**: Bắn tia quét $2.5\text{m}$ phía trước. Nếu phát hiện ô tô chắn ngang hoặc đang tiến tới, người đi bộ chủ động dừng bước chờ xe qua.
+   - **Xe né người qua đường có điều kiện**: Chỉ chủ động bẻ lái lách né khi phía trước và phía sau không có xe khác ở gần. Nếu có xe khác, xe ưu tiên phanh dừng nhường đường an toàn.
+   - **Lách qua trước mặt người qua đường**: Khi khoảng trống trước mặt người qua đường đủ rộng ($\ge 2.5\text{m}$), xe chủ động lách qua trước mặt để lưu thông liên tục.
 
 6. **Tín hiệu đèn hậu & Trực quan hóa va chạm**:
-   - **`CarLightsController`**: Điều khiển đèn phanh (đỏ rực khi đạp phanh), xi nhan vàng nhấp nháy khi chuyển làn/bẻ lái, đèn định vị sau.
-   - **`CarCollisionVisualizer`**: Khi 2 xe va chạm hoặc va vào rào chắn, cả 2 xe lập tức đổi sang màu đỏ rực cảnh báo va chạm và tự phục hồi màu sau vài giây.
-
-7. **Thiết lập tự động một chạm (`EnvironmentSetup`)**:
-   - Bộ công cụ Unity Editor Menu (`Tools -> Setup Road Environment`, `Tools -> Create CarAgent Prefab`) giúp tái tạo toàn bộ Scene mô phỏng chỉ với một cú nhấp chuột.
+   - **`CarLightsController`**: Điều khiển đèn phanh đỏ rực khi giảm tốc, xi nhan vàng nhấp nháy khi lách né.
+   - **`CarCollisionVisualizer`**: Đổi màu toàn bộ thân xe sang đỏ rực khi có va chạm vật lý và tự phục hồi màu sau vài giây.
 
 ---
 
@@ -86,47 +105,54 @@ TrafficJamSimulation/
 │   │   ├── RoadMaterial.mat            # Vật liệu nhựa đường cao tốc và rào chắn
 │   │   └── TailLightMaterial.mat       # Vật liệu đèn hậu xe (hỗ trợ phát xạ Emission)
 │   ├── Models/
-│   │   ├── traffic_aif_agent.onnx      # Trọng số Neural Network (.onnx) dùng cho Unity Sentis
-│   │   └── README.md                   # Hướng dẫn định dạng Input/Output của mô hình AI
+│   │   ├── traffic_aif_agent.onnx      # Model ONNX phân tầng đa nhiệm (9 inputs -> 7 outputs)
+│   │   └── README.md                   # Hướng dẫn chi tiết Input/Output của mô hình AI
 │   ├── Prefabs/
-│   │   ├── CarAgent.prefab             # Prefab hoàn chỉnh của xe (RigidBody, Agent, Đèn, Visualizer)
-│   │   ├── Pedestrian.prefab           # Prefab hoàn chỉnh người đi bộ qua đường (Collider, Agent, Body)
+│   │   ├── CarAgent.prefab             # Prefab xe hoàn chỉnh (RigidBody, Agent, Đèn, Visualizer)
+│   │   ├── Pedestrian.prefab           # Prefab người đi bộ qua đường (Collider, Agent, Body)
 │   │   └── README.md                   # Hướng dẫn tạo Prefab xe tiêu chuẩn
 │   ├── Scenes/
 │   │   └── TrafficSimulationScene.unity# Scene demo mô phỏng cao tốc 3 làn đường dài 500m
 │   └── Scripts/
-│       ├── AIFVehicleAgent.cs          # [QUAN TRỌNG] Bộ não điều khiển hành vi xe thông minh (AI + Phản xạ)
-│       ├── PedestrianAgent.cs          # Điều khiển hành vi người đi bộ qua đường (bước chân, hướng đi, tự hủy)
+│       ├── AIFVehicleAgent.cs          # [QUAN TRỌNG] Bộ não phân tầng 3 lớp (Sentis AI + Phản xạ)
+│       ├── PedestrianAgent.cs          # Điều khiển người đi bộ qua đường (Raycast né xe, dừng nhường)
 │       ├── PedestrianSpawner.cs        # Trình sinh người qua đường tự động hoặc theo vị trí chỉ định
 │       ├── VehicleAgent.cs             # Bộ điều khiển xe theo thuật toán cổ điển IDM (Benchmark)
-│       ├── TrafficInferenceEngine.cs   # Trình quản lý nạp và suy luận mô hình ONNX qua Sentis
-│       ├── TrafficSpawner.cs           # Script sinh đoàn xe đa làn so le, chống chồng lấn
-│       ├── TrafficLaneManager.cs       # Quản lý luồng giao thông trên cung đường lặp (Ring) hoặc thẳng
+│       ├── TrafficInferenceEngine.cs   # Quản lý nạp và suy luận mô hình ONNX qua Unity Sentis
+│       ├── TrafficSpawner.cs           # Script sinh đoàn xe so le đa làn, chống chồng lấn
+│       ├── TrafficLaneManager.cs       # Quản lý luồng giao thông trên cung đường
 │       ├── TrafficFieldManager.cs      # Singleton theo dõi bản đồ mật độ xe (Mean Field Grid)
 │       ├── CarLightsController.cs      # Điều khiển đèn hậu (phanh đỏ, xi nhan vàng nhấp nháy)
 │       ├── CarCollisionVisualizer.cs   # Hiệu ứng đổi màu xe đỏ rực khi có va chạm
 │       └── Editor/
 │           └── EnvironmentSetup.cs     # Công cụ Editor Menu tự động tạo Prefab và Scene 1-click
 ├── Packages/
-│   └── manifest.json                   # Danh sách package (bao gồm com.unity.sentis 2.1.3)
+│   └── manifest.json                   # Danh sách package (bao gồm com.unity.sentis)
 ├── ProjectSettings/                    # Cấu hình dự án Unity 6
 └── README.md                           # Tài liệu hướng dẫn dự án
 ```
 
-### Chi tiết các file C# cốt lõi:
+---
 
-| Tên File | Vai trò | Chức năng chi tiết |
-| :--- | :--- | :--- |
-| **`AIFVehicleAgent.cs`** | **Bộ não AI chính** | Thu thập dữ liệu cảm biến đa tia (khoảng cách xe trước, trạng thái đèn phanh/xi nhan xe trước, xe đi song song bên hông), chạy suy luận ONNX hoặc quy tắc thích ứng, điều khiển ga/phanh, bẻ lái né sườn, giữ góc yaw an toàn, phục hồi va chạm xe-xe và xe-lề. |
-| **`VehicleAgent.cs`** | **Bộ não IDM** | Triển khai mô hình vi mô *Intelligent Driver Model* (vận tốc tự do, khoảng cách an toàn động $s^*$, gia tốc cực đại $a$, giảm tốc tiện nghi $b$) và trực quan hóa tốc độ bằng dải màu (Xanh lá $\rightarrow$ Đỏ). |
-| **`TrafficInferenceEngine.cs`** | **Cầu nối Sentis** | Nạp file `.onnx` thành `ModelAsset`, khởi tạo `Worker` (CPU hoặc GPUCompute), chuẩn hóa tensor đầu vào `[speed, gap, rel_speed]` và nhận gia tốc đầu ra. |
-| **`TrafficSpawner.cs`** | **Tạo sinh lưu lượng** | Rải xe tự động trên 3 làn đường với khoảng cách an toàn biến thiên, so le vị trí Z, gán ngẫu nhiên chỉ số `hurryFactor` (0.75x - 1.35x), kiểm tra OverlapBox vật lý. |
-| **`CarLightsController.cs`** | **Hệ thống chiếu sáng** | Tự động kích hoạt đèn phanh đỏ rực khi ga âm hoặc khoảng cách gần, kích hoạt đèn xi nhan vàng nhấp nháy theo tần số khi bẻ lái hoặc chuyển làn ngẫu nhiên. |
-| **`CarCollisionVisualizer.cs`** | **Trực quan hóa tai nạn** | Đổi màu toàn bộ thân xe sang màu đỏ cảnh báo tức thì khi xảy ra va chạm với xe khác hoặc rào chắn, đếm ngược thời gian và phục hồi lại màu xe ban đầu. |
-| **`TrafficFieldManager.cs`** | **Trường mật độ Mean-Field** | Chia tuyến đường thành lưới 50 ô (cells), các xe liên tục đăng ký vị trí để tính toán mật độ cục bộ và tiêu tán mật độ theo thời gian. |
-| **`PedestrianAgent.cs`** | **Người qua đường (Khối hộp)** | Điều khiển khối người đi bộ băng ngang lòng đường, trang bị Raycast quét xe phía trước mặt để dừng lại tránh đâm vào xe, tự đổi màu đỏ rực và đứng yên 3.5s khi bị đâm, gán màu ngẫu nhiên và tự hủy khi qua đường xong. |
-| **`PedestrianSpawner.cs`** | **Sinh người qua đường** | Tự động sinh người đi bộ định kỳ tại vị trí ngẫu nhiên hoặc các vạch kẻ chỉ định, cung cấp hàm `SpawnPedestrian()` và `SpawnPedestrianAt()` cho phép kích hoạt người qua đường theo kịch bản. |
-| **`EnvironmentSetup.cs`** | **Công cụ Editor** | Menu `Tools` trong Unity Editor: Tự động gắn Tag `Vehicle` & `Pedestrian`, tạo vật liệu, tạo `CarAgent.prefab` & `Pedestrian.prefab`, xây dựng đoạn đường cao tốc 500m có rào chắn 2 bên, cấu hình Spawner và căn chỉnh Camera. |
+## 📊 Đặc tả Mô hình Mạng nơ-ron (.onnx)
+
+Mô hình [`traffic_aif_agent.onnx`](file:///E:/Unity%20Prj/TrafficJamSimulation/Assets/Models/traffic_aif_agent.onnx) vận hành với kiến trúc:
+
+- **Input Tensor `[1, 9]`**:
+  1. `normSpeed`: Vận tốc xe ($v / 30.0$).
+  2. `normGap`: Cự ly tới vật cản phía trước ($d / 50.0$).
+  3. `normRelSpeed`: Vận tốc tương đối với vật cản ($\Delta v / 15.0$).
+  4. `speedError`: Sai số vận tốc ($(v_{\text{target}} - v) / v_{\text{target}}$).
+  5. `normRoadOffset`: Độ lệch vị trí so với tim đường ($x / \text{halfRoadWidth}$).
+  6. `sideBalance`: Cân bằng cự ly hai bên sườn ($(distRight - distLeft) / 5.0$).
+  7. `isLeaderBraking`: Đèn phanh xe trước ($1.0$ hoặc $0.0$).
+  8. `pedestrianDetected`: Người đi bộ phía trước ($1.0$ hoặc $0.0$).
+  9. `trafficDensity`: Mật độ giao thông tại vị trí xe ($[0.0, 1.0]$).
+
+- **Output Tensor `[1, 7]`**:
+  - `Output[0..4]`: 5 logits phân loại hành vi Tầng 1 (`FreeFlow`, `CarFollowing`, `ActiveEvasion`, `SafeYielding`, `EmergencyShield`).
+  - `Output[5]`: Gia tốc chuẩn hóa $[-1.0, 1.0] \rightarrow a = \text{Output}[5] \times \text{maxAcceleration}$.
+  - `Output[6]`: Góc bẻ lái chuẩn hóa $[-1.0, 1.0] \rightarrow \text{steer} = \text{Output}[6] \times 0.45\text{ rad}$.
 
 ---
 
@@ -147,85 +173,43 @@ TrafficJamSimulation/
    - Trỏ tới thư mục `TrafficJamSimulation`.
    - Chọn phiên bản Unity tương ứng (khuyến nghị **Unity 6**).
 3. **Mở Scene mô phỏng**:
-   - Trong cửa sổ **Project**, điều hướng tới: `Assets/Scenes/TrafficSimulationScene.unity` và nhấn đúp để mở.
+   - Trong cửa sổ **Project**, mở file: `Assets/Scenes/TrafficSimulationScene.unity`.
 4. **Chạy mô phỏng**:
    - Nhấn nút **Play (▶)** trong Unity Editor.
-   - Quan sát đoàn xe di chuyển trên 3 làn đường, tự động giữ khoảng cách, né tránh xe chạy song song, phanh đỏ khi gặp chướng ngại và đổi màu khi có va chạm.
-5. *(Tùy chọn) Tái tạo lại Scene tự động*:
-   - Trên thanh menu Unity, chọn: **`Tools` $\rightarrow$ `Setup Road Environment`**. Hệ thống sẽ tự động cấu hình lại mặt đường, rào chắn, hệ thống spawner và camera.
+   - Quan sát đoàn xe di chuyển thông minh, tự động phân tầng hành vi, né tránh người đi bộ và tách rời khi đi song song sát nhau.
 
 ---
 
 ## 🧠 Hướng dẫn tích hợp Bộ não điều khiển xe vào dự án của bạn
 
-Nếu bạn đã có một dự án Unity riêng (Game lái xe, mô phỏng đô thị, hệ thống AI giao thông...) và muốn sử dụng bộ não điều khiển xe thông minh từ dự án này, hãy làm theo các bước sau:
-
 ### Bước 1: Cài đặt Unity Sentis
 Trong dự án của bạn:
 1. Mở menu **Window** $\rightarrow$ **Package Manager**.
-2. Nhấn nút dấu **`+`** ở góc trên bên trái $\rightarrow$ chọn **Add package by name...**
-3. Nhập:
-   ```text
-   com.unity.sentis
-   ```
-4. Nhấn **Add** và chờ Unity tải gói thư viện suy luận AI.
+2. Nhấn nút **`+`** $\rightarrow$ chọn **Add package by name...** $\rightarrow$ nhập: `com.unity.sentis`.
 
-### Bước 2: Sao chép các tệp mã nguồn và Model
-Copy các tệp sau từ thư mục `Assets/` của dự án này vào dự án của bạn:
-- `Assets/Scripts/AIFVehicleAgent.cs` *(Bộ não AI điều khiển xe)*
-- `Assets/Scripts/CarLightsController.cs` *(Hệ thống đèn phanh/xi nhan - nếu dùng)*
-- `Assets/Scripts/CarCollisionVisualizer.cs` *(Hiệu ứng đổi màu va chạm - nếu dùng)*
-- `Assets/Scripts/TrafficFieldManager.cs` *(Hệ thống mật độ Mean-Field - nếu dùng)*
-- `Assets/Models/traffic_aif_agent.onnx` *(Mô hình trí tuệ nhân tạo định dạng ONNX)*
+### Bước 2: Sao chép tệp mã nguồn và Model
+Copy các tệp sau từ `Assets/` vào dự án của bạn:
+- `Assets/Scripts/AIFVehicleAgent.cs` *(Bộ não phân tầng 3 lớp)*
+- `Assets/Scripts/CarLightsController.cs` *(Hệ thống đèn xe)*
+- `Assets/Scripts/CarCollisionVisualizer.cs` *(Hiệu ứng va chạm)*
+- `Assets/Scripts/TrafficFieldManager.cs` *(Trường mật độ Mean Field)*
+- `Assets/Models/traffic_aif_agent.onnx` *(Mô hình ONNX 9 inputs -> 7 outputs)*
 
-### Bước 3: Cấu hình Tag trong Unity
-1. Vào menu **Edit** $\rightarrow$ **Project Settings** $\rightarrow$ **Tags and Layers**.
-2. Thêm một Tag mới có tên chính xác là: **`Vehicle`**.
-3. *(Lưu ý: Tất cả các xe trong môi trường cần được gán Tag `Vehicle` để cảm biến Raycast nhận diện được nhau).*
-
-### Bước 4: Thiết lập cấu trúc xe (Vehicle GameObject)
-Trên GameObject chiếc xe của bạn (hoặc xe 3D model):
-1. **Collider**:
-   - Thêm một `BoxCollider` bao quanh thân xe.
-   - Gán `PhysicsMaterial` có `bounciness = 0` và `friction = 0.05` để xe di chuyển trơn tru, không bị nảy tưng khi va chạm.
-2. **Rigidbody**:
-   - Thêm component `Rigidbody`.
-   - Đặt `Mass`: `1500` (kg).
-   - Tắt `Use Gravity`: Bỏ tích (hoặc bật tùy thiết lập, khuyến nghị tắt để kiểm soát độ cao ổn định).
-   - Đặt `Collision Detection`: **Continuous Dynamic** (ngăn xe đâm xuyên nhau ở tốc độ cao).
-   - Đặt `Interpolate`: **Interpolate** (chuyển động mượt mà, không giật hình).
-   - **Constraints**: Tích chọn khóa các trục:
-     - `Freeze Position Y` (hoặc cố định qua script `fixedHeightY`).
-     - `Freeze Rotation X`
-     - `Freeze Rotation Y`
-     - `Freeze Rotation Z`
-3. **Tag**: Chọn Tag của GameObject là **`Vehicle`**.
-
-### Bước 5: Gắn component `AIFVehicleAgent`
-1. Kéo thả script `AIFVehicleAgent.cs` vào GameObject chiếc xe.
-2. Tại Inspector của `AIFVehicleAgent`:
-   - **`Onnx Model Asset`**: Kéo tệp `traffic_aif_agent.onnx` từ thư mục Project vào trường này.
-   - **`Road Width`**: Nhập độ rộng mặt đường thực tế của bạn (mặc định là `10`).
-   - **`Max Safe Road X`**: Biên độ tối đa xe được phép đi theo trục X trước khi chạm rào (mặc định `4.1`).
-   - **`Fixed Height Y`**: Độ cao cố định của tâm xe tính từ mặt đường (ví dụ `0.5`).
-   - **`Target Speed`**: Tốc độ hành trình mong muốn (m/s, mặc định `15` ~ 54 km/h).
-   - **`Max Heading Angle`**: Góc lệch lái tối đa (khuyến nghị `15` đến `18` độ).
-3. *(Tùy chọn gắn đèn xe)*:
-   - Nếu xe có 2 MeshRenderer đèn sau, thêm `CarLightsController`, gán 2 đèn vào `Left Tail Light Renderer` và `Right Tail Light Renderer`.
-   - Gán `CarLightsController` vào trường `Lights Controller` trên `AIFVehicleAgent`.
-4. *(Tùy chọn gắn hiệu ứng va chạm)*:
-   - Thêm `CarCollisionVisualizer`, gán `Body Renderer` là MeshRenderer thân xe.
-   - Gán vào trường `Collision Visualizer` trên `AIFVehicleAgent`.
+### Bước 3: Cấu hình Tag & Rigidbody
+1. Đặt Tag của xe là **`Vehicle`**.
+2. Cấu hình Rigidbody: `Mass: 1500`, `Collision Detection: Continuous Dynamic`, `Interpolate: Interpolate`.
+3. Gắn script `AIFVehicleAgent.cs`, kéo file `traffic_aif_agent.onnx` vào trường `Onnx Model Asset`.
 
 ---
 
 ## ⚙️ Cấu hình tham số của Bộ não AIFVehicleAgent
 
-Dưới đây là bảng giải thích chi tiết các thông số trong `AIFVehicleAgent` để bạn tinh chỉnh theo từng kịch bản:
-
 ```csharp
+[Header("Hierarchical Architecture (Kiến trúc phân tầng)")]
+[SerializeField] private DrivingMode currentDrivingMode = DrivingMode.FreeFlow;
+
 [Header("Driver Personality (Độ Vội)")]
-public float hurryFactor = 1.0f; // 0.75 = Điềm tĩnh, nhường đường; 1.35 = Vội vã, bứt tốc, bám sát
+public float hurryFactor = 1.0f; // 0.75 = Điềm tĩnh; 1.35 = Vội vã, bứt tốc, bám sát
 
 [Header("Road Boundary Limits")]
 public float roadWidth = 10f;      // Bề rộng toàn bộ mặt đường (m)
@@ -233,10 +217,6 @@ public float maxSafeRoadX = 4.1f;  // Tọa độ mép an toàn cách tim đư�
 
 [Header("Heading Angle Constraint")]
 public float maxHeadingAngle = 18f;// Giới hạn góc bẻ lái tối đa tránh quay ngược chiều
-
-[Header("Side Vehicle Detection")]
-public float sideScanDistance = 2.8f;        // Khoảng cách quét phát hiện xe chạy song song (m)
-public float sideEvasionSteerStrength = 0.40f;// Lực đánh lái né sang bên đường trống
 
 [Header("Separation & Collision Recovery")]
 public float vehicleSeparationSpeed = 1.2f;  // Vận tốc tách nhẹ khi 2 xe chạm nhau
@@ -246,65 +226,13 @@ public float crashBrakeDecel = 12.0f;        // Gia tốc phanh khẩn cấp khi
 
 ---
 
-## 📊 Mô hình Mạng nơ-ron (.onnx) Input & Output
-
-Mô hình AI điều khiển tăng/giảm tốc được nạp thông qua Unity Sentis có đặc tả tensor như sau:
-
-- **Input Tensor `[1, 3]`**:
-  1. `speed`: Vận tốc hiện tại của xe (chuẩn hóa chia cho $30.0\text{ m/s}$).
-  2. `distanceToLeader`: Khoảng cách tới xe liền trước (chuẩn hóa chia cho $50.0\text{ m}$).
-  3. `relativeVelocity`: Vận tốc tương đối ($v_{leader} - v_{current}$, chuẩn hóa chia cho $15.0\text{ m/s}$).
-- **Output Tensor `[1, 1]`**:
-  - `acceleration`: Giá trị gia tốc dự đoán $a \in [-6.0, +3.0]\text{ m/s}^2$.
-
----
-
----
-
 ## 🚶‍♂️ Hướng dẫn sử dụng Hệ thống Người qua đường (Pedestrian Spawner)
 
-### 1. Prefab Người qua đường (`Pedestrian.prefab`):
-- Nằm tại: `Assets/Prefabs/Pedestrian.prefab` (Tag: `Pedestrian`).
-- Được gắn script [`PedestrianAgent.cs`](file:///E:/Unity%20Prj/TrafficJamSimulation/Assets/Scripts/PedestrianAgent.cs), tự động bước qua đường với tốc độ cấu hình (mặc định $1.4	ext{ m/s}$), có nhịp bước chân nhấp nhô sinh động và tự động hủy sau khi bước lên lề bên kia.
-
-### 2. Các hàm sinh người qua đường bằng mã C#:
-Bạn có thể tham chiếu tới `PedestrianSpawner` trong Scene để gọi sinh người qua đường bất cứ lúc nào:
-
-```csharp
-using TrafficJamSimulation;
-using UnityEngine;
-
-public class TrafficScenarioController : MonoBehaviour
-{
-    [SerializeField] private PedestrianSpawner pedestrianSpawner;
-
-    void Update()
-    {
-        // Nhấn phím P: Sinh 1 người qua đường tại vị trí ngẫu nhiên
-        if (Input.GetKeyDown(KeyCode.P))
-        {
-            GameObject ped = pedestrianSpawner.SpawnPedestrian();
-            Debug.Log($"Đã sinh người qua đường tại: {ped.transform.position}");
-        }
-
-        // Nhấn phím C: Sinh người qua đường tại vị trí cố định Z = 120m, đi từ trái sang phải với tốc độ 1.5 m/s
-        if (Input.GetKeyDown(KeyCode.C))
-        {
-            pedestrianSpawner.SpawnPedestrianAt(
-                zPosition: 120f,
-                fromLeftToRight: true,
-                walkingSpeed: 1.5f
-            );
-        }
-
-        // Nhấn phím X: Xóa sạch toàn bộ người qua đường hiện có
-        if (Input.GetKeyDown(KeyCode.X))
-        {
-            pedestrianSpawner.ClearAllPedestrians();
-        }
-    }
-}
-```
+- **Prefab Người qua đường**: Nằm tại `Assets/Prefabs/Pedestrian.prefab` (Tag: `Pedestrian`).
+- **Phím tắt điều khiển kịch bản trong Scene**:
+  - Nhấn phím **P**: Sinh 1 người qua đường tại vị trí ngẫu nhiên.
+  - Nhấn phím **C**: Sinh người qua đường tại vị trí cố định $Z = 120\text{m}$, đi từ trái sang phải.
+  - Nhấn phím **X**: Xóa sạch toàn bộ người qua đường hiện có.
 
 ---
 
