@@ -235,4 +235,3 @@ public float crashBrakeDecel = 12.0f;        // Gia tốc phanh khẩn cấp khi
   - Nhấn phím **X**: Xóa sạch toàn bộ người qua đường hiện có.
 
 ---
-thời gian thực.
