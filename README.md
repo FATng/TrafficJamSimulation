@@ -1,6 +1,6 @@
 # Traffic Jam Simulation (Unity 6 + Sentis AI)
 
-> **Mô phỏng dòng giao thông thông minh và hiện tượng kẹt xe (Phantom Jam) trên Unity 6**, kết hợp giữa trí tuệ nhân tạo (Inference Engine qua **Unity Sentis** / **ONNX**), kiến trúc phân tầng ra quyết định và chấp hành (**Hierarchical Architecture**), mạng nơ-ron đa nhiệm (**Multi-Head Decision & Control Network**), và bộ điều khiển hành vi phản xạ đa tia (**Omnidirectional Perception & Active Evasion**).
+> **Mô phỏng dòng giao thông thông minh và hiện tượng kẹt xe trên Unity 6**, kết hợp giữa trí tuệ nhân tạo (Inference Engine qua **Unity Sentis** / **ONNX**), kiến trúc phân tầng ra quyết định và chấp hành (**Hierarchical Architecture**), mạng nơ-ron đa nhiệm (**Multi-Head Decision & Control Network**), và bộ điều khiển hành vi phản xạ đa tia (**Omnidirectional Perception & Active Evasion**).
 
 ---
 
