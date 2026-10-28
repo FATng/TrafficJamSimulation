@@ -1,10 +1,10 @@
-# 🚗 Traffic Jam Simulation (Unity 6 + Sentis AI)
+# Traffic Jam Simulation (Unity 6 + Sentis AI)
 
 > **Mô phỏng dòng giao thông thông minh và hiện tượng kẹt xe (Phantom Jam) trên Unity 6**, kết hợp giữa trí tuệ nhân tạo (Inference Engine qua **Unity Sentis** / **ONNX**), kiến trúc phân tầng ra quyết định và chấp hành (**Hierarchical Architecture**), mạng nơ-ron đa nhiệm (**Multi-Head Decision & Control Network**), và bộ điều khiển hành vi phản xạ đa tia (**Omnidirectional Perception & Active Evasion**).
 
 ---
 
-## 📌 Mục lục
+## Mục lục
 - [Giới thiệu tổng quan](#-giới-thiệu-tổng-quan)
 - [Kiến trúc Phân tầng 3 Lớp (Hierarchical Architecture)](#-kiến-trúc-phân-tầng-3-lớp-hierarchical-architecture)
 - [Tính năng nổi bật](#-tính-năng-nổi-bật)
@@ -18,7 +18,7 @@
 
 ---
 
-## 🌟 Giới thiệu tổng quan
+## Giới thiệu tổng quan
 
 Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượng vật lý và tâm lý lái xe trong giao thông đường bộ:
 - Hiện tượng **Kẹt xe ma (Phantom Traffic Jams / Stop-and-Go Waves)**: Khi một xe đột ngột đạp phanh nhẹ, sóng dừng phản ứng dây chuyền lan truyền ngược về phía sau đoàn xe tạo thành nút thắt cổ chai dù không có tai nạn hay chướng ngại vật cố định.
@@ -27,7 +27,7 @@ Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượn
 
 ---
 
-## 🏛 Kiến trúc Phân tầng 3 Lớp (Hierarchical Architecture)
+## Kiến trúc Phân tầng 3 Lớp (Hierarchical Architecture)
 
 Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn của hệ thống tự hành tiên tiến:
 
@@ -43,7 +43,7 @@ Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn c�
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
-│  TẦNG 2: MẠNG NƠ-RON AI THỰC THI CHÍNH SÁCH (Neural Control Policy)   │
+│  TẦNG 2: MẠNG NƠ-RON AI THỰC THI CHÍNH SÁCH (Neural Control Policy)    │
 │  Input [1, 9] ──► traffic_aif_agent.onnx ──► Output [1, 7]             │
 │  • Output[0..4]: Điểm số phân loại hành vi (argmax -> DrivingMode)     │
 │  • Output[5]: Gia tốc điều khiển liên tục (Continuous Acceleration)    │
@@ -51,9 +51,9 @@ Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn c�
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
-│  TẦNG 3: LỚP BẢO VỆ VẬT LÝ & CHẤP HÀNH (Safety Shield & Actuation)    │
-│  - Bộ lọc làm mượt góc lái EMA (Exponential Moving Average)           │
-│  - Lực đẩy phân tách sườn (Side Separation Force) khi 2 xe đi sát nhau│
+│  TẦNG 3: LỚP BẢO VỆ VẬT LÝ & CHẤP HÀNH (Safety Shield & Actuation)     │
+│  - Bộ lọc làm mượt góc lái EMA (Exponential Moving Average)            │
+│  - Lực đẩy phân tách sườn (Side Separation Force) khi 2 xe đi sát nhau │
 │  - Bảo hiểm mép đường / rào chắn (Curb Collision Guard)                │
 │  - Áp dụng vào Rigidbody linearVelocity & rotation                     │
 └────────────────────────────────────────────────────────────────────────┘
@@ -61,7 +61,7 @@ Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn c�
 
 ---
 
-## ✨ Tính năng nổi bật
+## Tính năng nổi bật
 
 1. **AI điều khiển cả Gia tốc và Góc lái (Neural Acceleration & Steering)**:
    - Toàn bộ quyết định tăng tốc, duy trì vận tốc, hãm phanh và bẻ góc lái vi mô được suy luận đồng thời trực tiếp từ mô hình mạng nơ-ron sâu định dạng ONNX chạy qua **Unity Sentis**.
@@ -94,7 +94,7 @@ Bộ não xe được thiết kế theo mô hình phân tầng tiêu chuẩn c�
 
 ---
 
-## 📂 Cấu trúc thư mục & Chức năng các file chính
+## Cấu trúc thư mục & Chức năng các file chính
 
 ```text
 TrafficJamSimulation/
@@ -134,7 +134,7 @@ TrafficJamSimulation/
 
 ---
 
-## 📊 Đặc tả Mô hình Mạng nơ-ron (.onnx)
+## Đặc tả Mô hình Mạng nơ-ron (.onnx)
 
 Mô hình [`traffic_aif_agent.onnx`](file:///E:/Unity%20Prj/TrafficJamSimulation/Assets/Models/traffic_aif_agent.onnx) vận hành với kiến trúc:
 
@@ -156,7 +156,7 @@ Mô hình [`traffic_aif_agent.onnx`](file:///E:/Unity%20Prj/TrafficJamSimulation
 
 ---
 
-## 🛠 Yêu cầu hệ thống & Hướng dẫn cài đặt
+## Yêu cầu hệ thống & Hướng dẫn cài đặt
 
 ### Yêu cầu tiên quyết:
 - **Unity Version**: Unity **6 (6000.3.x)** trở lên (hoặc Unity 2023.2+ có hỗ trợ Unity Sentis).
@@ -180,7 +180,7 @@ Mô hình [`traffic_aif_agent.onnx`](file:///E:/Unity%20Prj/TrafficJamSimulation
 
 ---
 
-## 🧠 Hướng dẫn tích hợp Bộ não điều khiển xe vào dự án của bạn
+## Hướng dẫn tích hợp Bộ não điều khiển xe vào dự án của bạn
 
 ### Bước 1: Cài đặt Unity Sentis
 Trong dự án của bạn:
@@ -202,7 +202,7 @@ Copy các tệp sau từ `Assets/` vào dự án của bạn:
 
 ---
 
-## ⚙️ Cấu hình tham số của Bộ não AIFVehicleAgent
+## Cấu hình tham số của Bộ não AIFVehicleAgent
 
 ```csharp
 [Header("Hierarchical Architecture (Kiến trúc phân tầng)")]
@@ -226,7 +226,7 @@ public float crashBrakeDecel = 12.0f;        // Gia tốc phanh khẩn cấp khi
 
 ---
 
-## 🚶‍♂️ Hướng dẫn sử dụng Hệ thống Người qua đường (Pedestrian Spawner)
+## Hướng dẫn sử dụng Hệ thống Người qua đường (Pedestrian Spawner)
 
 - **Prefab Người qua đường**: Nằm tại `Assets/Prefabs/Pedestrian.prefab` (Tag: `Pedestrian`).
 - **Phím tắt điều khiển kịch bản trong Scene**:
@@ -235,9 +235,4 @@ public float crashBrakeDecel = 12.0f;        // Gia tốc phanh khẩn cấp khi
   - Nhấn phím **X**: Xóa sạch toàn bộ người qua đường hiện có.
 
 ---
-
-## 📄 Giấy phép & Tác giả
-
-- **Tác giả**: [FATng](https://github.com/FATng)
-- **Repository**: [https://github.com/FATng/TrafficJamSimulation](https://github.com/FATng/TrafficJamSimulation)
-- **Mục đích**: Nghiên cứu mô phỏng hành vi giao thông, hiện tượng kẹt xe sóng dừng (phantom traffic jams) và ứng dụng học máy / Unity Sentis trong điều khiển tự hành thời gian thực.
+thời gian thực.
