@@ -14,7 +14,6 @@
 - [Hướng dẫn tích hợp Bộ não điều khiển xe vào dự án của bạn](#-hướng-dẫn-tích-hợp-bộ-não-điều-khiển-xe-vào-dự-án-của-bạn)
 - [Cấu hình tham số của Bộ não AIFVehicleAgent](#-cấu-hình-tham-số-của-bộ-não-aifvehicleagent)
 - [Hướng dẫn sử dụng Hệ thống Người qua đường](#-hướng-dẫn-sử-dụng-hệ-thống-người-qua-đường-pedestrian-spawner)
-- [Giấy phép & Tác giả](#-giấy-phép--tác-giả)
 
 ---
 
