@@ -21,7 +21,7 @@
 ## Giới thiệu tổng quan
 
 Dự án **Traffic Jam Simulation** mô phỏng chân thực các hiện tượng vật lý và tâm lý lái xe trong giao thông đường bộ:
-- Hiện tượng **Kẹt xe ma (Phantom Traffic Jams / Stop-and-Go Waves)**: Khi một xe đột ngột đạp phanh nhẹ, sóng dừng phản ứng dây chuyền lan truyền ngược về phía sau đoàn xe tạo thành nút thắt cổ chai dù không có tai nạn hay chướng ngại vật cố định.
+- Hiện tượng **Kẹt xe (Stop-and-Go Waves)**: Khi một xe đột ngột đạp phanh nhẹ, sóng dừng phản ứng dây chuyền lan truyền ngược về phía sau đoàn xe tạo thành nút thắt cổ chai dù không có tai nạn hay chướng ngại vật cố định.
 - **Tâm lý tài xế phân hóa (`hurryFactor`)**: Mỗi xe có chỉ số "độ vội" khác nhau (từ từ tốn, giữ khoảng cách xa đến vội vã, bứt tốc nhanh, bám sát).
 - **Bộ não điều khiển xe toàn diện (`AIFVehicleAgent`)**: Vận hành dựa trên mô hình học máy `.onnx` đa nhiệm (Multi-Head), điều khiển trực tiếp cả **Gia tốc (Acceleration)** và **Góc lái (Steering)**, kết hợp hệ thống cảm biến quang học ảo đa hướng, cơ chế phân tách sườn xe song song và phục hồi sau va chạm.
 
