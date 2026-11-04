@@ -208,7 +208,7 @@ Trong khi mô phỏng đang chạy, bạn có thể bấm các phím sau trong c
 
 ---
 
-## 🛠 Yêu cầu hệ thống & Hướng dẫn cài đặt
+## Yêu cầu hệ thống & Hướng dẫn cài đặt
 
 ### Yêu cầu tiên quyết:
 - **Unity Version**: Unity **6 (6000.3.x)** trở lên (hoặc Unity 2023.2+ có hỗ trợ Unity Sentis).
