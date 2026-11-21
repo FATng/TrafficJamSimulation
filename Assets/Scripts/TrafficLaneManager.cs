@@ -9,10 +9,6 @@ namespace TrafficJamSimulation
         StraightHighway
     }
 
-    /// <summary>
-    /// Spawns and manages single-lane traffic flow, demonstrates shockwave propagation (phantom jams),
-    /// and tracks real-time traffic performance metrics.
-    /// </summary>
     public class TrafficLaneManager : MonoBehaviour
     {
         [Header("Lane & Track Settings")]
@@ -27,7 +23,7 @@ namespace TrafficJamSimulation
         public GameObject vehiclePrefab;
         [Range(5, 50)]
         public int vehicleCount = 22;
-        public float initialSpeed = 12f; // ~43 km/h
+        public float initialSpeed = 12f;
         public ControlMode vehicleControlMode = ControlMode.IntelligentDriverModel;
 
         [Header("Perturbation Trigger (Phantom Jam Experiment)")]
@@ -46,8 +42,8 @@ namespace TrafficJamSimulation
         private float _simulationTimer = 0f;
         private bool _perturbationApplied = false;
 
-        public float EffectiveTrackLength => trackType == TrackType.CircularRing 
-            ? 2f * Mathf.PI * circleRadius 
+        public float EffectiveTrackLength => trackType == TrackType.CircularRing
+            ? 2f * Mathf.PI * circleRadius
             : straightTrackLength;
 
         private void Start()
@@ -58,7 +54,6 @@ namespace TrafficJamSimulation
 
         public void SpawnVehicles()
         {
-            // Clear existing
             foreach (var v in _vehicles)
             {
                 if (v != null) Destroy(v.gameObject);
@@ -81,7 +76,6 @@ namespace TrafficJamSimulation
                 }
                 else
                 {
-                    // Fallback procedural placeholder vehicle (Box)
                     carGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     carGo.transform.SetPositionAndRotation(spawnPos, spawnRot);
                     carGo.transform.localScale = new Vector3(2f, 1.4f, 4.2f);
@@ -101,7 +95,6 @@ namespace TrafficJamSimulation
                 _vehicles.Add(agent);
             }
 
-            // Link circular leader-follower relationships
             for (int i = 0; i < _vehicles.Count; i++)
             {
                 int leaderIndex = (i + 1) % _vehicles.Count;
@@ -115,10 +108,8 @@ namespace TrafficJamSimulation
             _simulationTimer += dt;
             float trackLength = EffectiveTrackLength;
 
-            // Handle perturbation test (Brake on car 0)
             HandlePerturbation();
 
-            // Step each vehicle
             float totalSpeed = 0f;
             float minSpeed = float.MaxValue;
             int jammedCount = 0;
@@ -128,17 +119,14 @@ namespace TrafficJamSimulation
                 var vehicle = _vehicles[i];
                 vehicle.StepSimulation(dt, trackLength, isLoopTrack: true);
 
-                // Update physical 3D transform
                 vehicle.transform.position = Calculate3DPosition(vehicle.trackPosition);
                 vehicle.transform.rotation = Calculate3DRotation(vehicle.trackPosition);
 
-                // Compute stats
                 totalSpeed += vehicle.currentSpeed;
                 if (vehicle.currentSpeed < minSpeed) minSpeed = vehicle.currentSpeed;
                 if (vehicle.currentSpeed < 3.0f) jammedCount++;
             }
 
-            // Update Inspector metrics
             if (_vehicles.Count > 0)
             {
                 averageSpeed = totalSpeed / _vehicles.Count;
@@ -155,7 +143,6 @@ namespace TrafficJamSimulation
             {
                 if (_simulationTimer <= perturbationDelaySeconds + brakeDurationSeconds)
                 {
-                    // Force car 0 to brake hard
                     _vehicles[0].currentSpeed = Mathf.Max(0f, _vehicles[0].currentSpeed - 8.0f * Time.fixedDeltaTime);
                 }
                 else
@@ -185,7 +172,6 @@ namespace TrafficJamSimulation
             if (trackType == TrackType.CircularRing)
             {
                 float angle = (linearPos / EffectiveTrackLength) * 2f * Mathf.PI;
-                // Tangent direction to the circle
                 Vector3 forward = new Vector3(-Mathf.Sin(angle), 0f, Mathf.Cos(angle));
                 return Quaternion.LookRotation(forward, Vector3.up);
             }

@@ -4,13 +4,10 @@ namespace TrafficJamSimulation
 {
     public enum ControlMode
     {
-        IntelligentDriverModel, // Rule-based IDM (benchmark)
-        SentisInference         // AI Inference via ONNX model
+        IntelligentDriverModel,
+        SentisInference
     }
 
-    /// <summary>
-    /// Represents an individual vehicle operating in a single-lane traffic flow.
-    /// </summary>
     [RequireComponent(typeof(Renderer))]
     public class VehicleAgent : MonoBehaviour
     {
@@ -22,13 +19,13 @@ namespace TrafficJamSimulation
         public ControlMode controlMode = ControlMode.IntelligentDriverModel;
 
         [Header("Physical State")]
-        public float currentSpeed = 10f; // m/s
-        public float maxSpeed = 25f;     // m/s (~90 km/h)
-        public float maxAcceleration = 2.0f; // m/s^2
-        public float desiredDeceleration = 2.5f; // m/s^2
-        public float minimumGap = 2.0f;  // m (s0)
-        public float desiredHeadwayTime = 1.5f; // seconds (T)
-        public float vehicleLength = 4.5f; // meters
+        public float currentSpeed = 10f;
+        public float maxSpeed = 25f;
+        public float maxAcceleration = 2.0f;
+        public float desiredDeceleration = 2.5f;
+        public float minimumGap = 2.0f;
+        public float desiredHeadwayTime = 1.5f;
+        public float vehicleLength = 4.5f;
 
         [Header("Driver Personality (Độ Vội)")]
         [Range(0.6f, 1.6f)]
@@ -42,7 +39,7 @@ namespace TrafficJamSimulation
         [Header("Leader Reference")]
         public VehicleAgent leaderVehicle;
         public float distanceToLeader;
-        public float relativeVelocity; // leader.speed - currentSpeed
+        public float relativeVelocity;
 
         [Header("Visualization")]
         public Color freeFlowColor = Color.green;
@@ -73,9 +70,6 @@ namespace TrafficJamSimulation
             leaderVehicle = leader;
         }
 
-        /// <summary>
-        /// Updates vehicle physics each simulation step.
-        /// </summary>
         public void StepSimulation(float deltaTime, float trackLength, bool isLoopTrack)
         {
             UpdateLeaderPerception(trackLength, isLoopTrack);
@@ -84,36 +78,30 @@ namespace TrafficJamSimulation
 
             if (controlMode == ControlMode.SentisInference && _inferenceEngine != null && _inferenceEngine.IsModelReady)
             {
-                // Run inference via ONNX model (Normalized inputs: speed, gap, rel_speed)
                 acceleration = _inferenceEngine.PredictAcceleration(currentSpeed, distanceToLeader, relativeVelocity);
             }
             else
             {
-                // Fallback to Intelligent Driver Model (IDM)
                 acceleration = CalculateIDMAcceleration();
             }
 
-            // Apply acceleration (Xe có hurryFactor cao bứt tốc nhanh hơn khi đường trống)
             if (distanceToLeader > 25f && hurryFactor > 1.0f && acceleration > 0f)
             {
                 acceleration *= (1.0f + (hurryFactor - 1.0f) * 1.5f);
             }
             currentSpeed = Mathf.Clamp(currentSpeed + acceleration * deltaTime, 0f, maxSpeed * hurryFactor);
 
-            // Update tail lights (Braking when decelerating)
             if (_lightsController != null)
             {
                 _lightsController.SetBraking(acceleration < -0.3f);
             }
 
-            // Update linear position
             trackPosition += currentSpeed * deltaTime;
             if (isLoopTrack && trackLength > 0f)
             {
                 trackPosition %= trackLength;
             }
 
-            // Update visual color based on speed (Red = Jammed, Green = Free Flow)
             UpdateVisualFeedback();
         }
 
@@ -136,20 +124,14 @@ namespace TrafficJamSimulation
             relativeVelocity = leaderVehicle.currentSpeed - currentSpeed;
         }
 
-        /// <summary>
-        /// Standard Intelligent Driver Model (Treiber et al., 2000)
-        /// Widely used to model phantom traffic jams and shockwaves.
-        /// </summary>
         private float CalculateIDMAcceleration()
         {
             float effMaxSpeed = maxSpeed * hurryFactor;
             float effMinGap = minimumGap / Mathf.Clamp(hurryFactor, 0.7f, 1.4f);
 
-            // Free road acceleration term
             float freeRoadRatio = currentSpeed / Mathf.Max(0.1f, effMaxSpeed);
             float freeRoadTerm = 1f - Mathf.Pow(freeRoadRatio, 4f);
 
-            // Tín hiệu đèn phanh xe trước
             bool leaderIsBraking = false;
             if (leaderVehicle != null)
             {
@@ -157,9 +139,8 @@ namespace TrafficJamSimulation
                 if (leaderLights != null && leaderLights.IsBraking) leaderIsBraking = true;
             }
 
-            // Interaction / braking term
-            float deltaV = -relativeVelocity; // v - v_lead
-            float desiredDistance = effMinGap + (leaderIsBraking ? 2.5f : 0f) + Mathf.Max(0f, currentSpeed * desiredHeadwayTime + 
+            float deltaV = -relativeVelocity;
+            float desiredDistance = effMinGap + (leaderIsBraking ? 2.5f : 0f) + Mathf.Max(0f, currentSpeed * desiredHeadwayTime +
                 (currentSpeed * deltaV) / (2f * Mathf.Sqrt(maxAcceleration * desiredDeceleration)));
 
             float interactionTerm = Mathf.Pow(desiredDistance / Mathf.Max(0.1f, distanceToLeader), 2f);
@@ -177,7 +158,7 @@ namespace TrafficJamSimulation
 
             _renderer.GetPropertyBlock(_propBlock);
             _propBlock.SetColor("_BaseColor", currentColor);
-            _propBlock.SetColor("_Color", currentColor); // Fallback for built-in/standard shader
+            _propBlock.SetColor("_Color", currentColor);
             _renderer.SetPropertyBlock(_propBlock);
         }
     }

@@ -2,13 +2,6 @@ using UnityEngine;
 
 namespace TrafficJamSimulation
 {
-    /// <summary>
-    /// Điều khiển hành vi của người đi bộ qua đường (dạng khối chữ nhật):
-    /// - Di chuyển ngang qua lòng đường (trục X) từ lề này sang lề đối diện.
-    /// - Có Raycast phía trước: nếu có xe chắn hoặc đang chạy tới thì dừng lại nhường đường, tránh đâm vào xe.
-    /// - Khi bị xe đâm trúng: lập tức chuyển màu đỏ rực và đứng yên trong vài giây trước khi tiếp tục.
-    /// - Tự động hủy (despawn) sau khi đã qua đường an toàn.
-    /// </summary>
     [RequireComponent(typeof(Collider))]
     public class PedestrianAgent : MonoBehaviour
     {
@@ -88,7 +81,6 @@ namespace TrafficJamSimulation
                 _rb.isKinematic = true;
             }
 
-            // Gán PhysicsMaterial triệt tiêu ma sát (zero friction) để người không bao giờ bị bám dính hay kéo theo xe
             Collider col = GetComponent<Collider>();
             if (col != null)
             {
@@ -120,9 +112,6 @@ namespace TrafficJamSimulation
             UpdateFacingRotation();
         }
 
-        /// <summary>
-        /// Khởi tạo thông số người qua đường khi spawn
-        /// </summary>
         public void Initialize(Vector3 startPos, int direction, float speed, float width)
         {
             transform.position = startPos;
@@ -153,22 +142,18 @@ namespace TrafficJamSimulation
 
             float dt = Time.deltaTime;
 
-            // 1. Xử lý trạng thái va chạm (Tô đỏ và dừng lại)
             if (isInCrashState)
             {
                 _crashTimer -= dt;
                 if (_crashTimer <= 0f)
                 {
                     isInCrashState = false;
-                    ApplyColor(_normalColor); // Khôi phục màu bình thường
+                    ApplyColor(_normalColor);
 
-                    // SAU KHOẢNG CHỜ: Lùi người xa xe ra và tiếp tục di chuyển, tránh dừng lặp vô thời hạn
                     Vector3 sepPos = transform.position;
 
-                    // Dời người dạt mạnh sang hướng qua đường (+X hoặc -X) để thoát khỏi đầu xe
                     sepPos.x += crossingDirection * 1.8f;
 
-                    // Nếu có xe va chạm: dời người theo trục Z ra xa khỏi đầu xe để tách hẳn hai Collider
                     if (_lastCollidedVehicle != null)
                     {
                         float dz = transform.position.z - _lastCollidedVehicle.transform.position.z;
@@ -182,10 +167,9 @@ namespace TrafficJamSimulation
 
                     transform.position = sepPos;
 
-                    // Đặt thời gian ân hạn 3.5s: Người không bị đứng sững lại bởi chính xe vừa va chạm
                     _postCrashGraceTimer = 3.5f;
                 }
-                return; // Đứng yên hoàn toàn khi đang bị đâm
+                return;
             }
 
             if (_postCrashGraceTimer > 0f)
@@ -193,9 +177,6 @@ namespace TrafficJamSimulation
                 _postCrashGraceTimer -= dt;
             }
 
-            // 2. Dò quét xe phía trước mặt bằng Raycast:
-            // - Nếu xe đang chạy (speed >= 0.5 m/s): dừng lại nhường đường, tránh đâm vào xe.
-            // - Nếu xe chắn trước mặt ĐÃ DỪNG LẠI (< 0.5 m/s): cho phép tiếp tục đi qua hoặc dịch trái/phải để vòng qua xe!
             if (_postCrashGraceTimer <= 0f)
             {
                 bool hasVehicleAhead = ScanForVehicles(out bool isStoppedCar, out GameObject carObj, out float hitDist);
@@ -204,7 +185,6 @@ namespace TrafficJamSimulation
                 {
                     if (!isStoppedCar)
                     {
-                        // XE ĐANG CHẠY: Dừng lại nhường đường an toàn
                         isYieldingToVehicle = true;
                         isDetouring = false;
                         _detourTimer = 0f;
@@ -212,11 +192,8 @@ namespace TrafficJamSimulation
                     }
                     else
                     {
-                        // XE ĐÃ DỪNG LẠI:
-                        // Cho phép người đi đường tiếp tục đi qua hoặc dịch trái/phải để vượt qua!
                         isYieldingToVehicle = false;
 
-                        // Tạm thời bỏ qua va chạm cứng để người đi qua mượt mà không bị kẹt mép Collider
                         if (carObj != null)
                         {
                             IgnoreCollisionWithVehicle(carObj, 2.5f);
@@ -224,18 +201,14 @@ namespace TrafficJamSimulation
 
                         if (hitDist <= 1.5f)
                         {
-                            // Xe chắn quá sát ngay trước mặt (<= 1.5m): Kích hoạt dịch trái / dịch phải (theo trục Z)
                             isDetouring = true;
                             _detourTimer = 0.9f;
 
                             float carCenterZ = carObj.transform.position.z;
-                            // Nếu người đang ở phía trước xe (Z >= carCenterZ): dịch tiến (+Z) qua mũi xe
-                            // Nếu người đang ở phía sau xe (Z < carCenterZ): dịch lùi (-Z) qua đuôi xe
                             _detourDirectionZ = (transform.position.z >= carCenterZ) ? 1.0f : -1.0f;
                         }
                         else
                         {
-                            // Còn khoảng trống (> 1.5m): Tiếp tục đi thẳng băng qua trước hoặc sau xe
                             if (_detourTimer <= 0f) isDetouring = false;
                         }
                     }
@@ -252,14 +225,11 @@ namespace TrafficJamSimulation
                 if (_detourTimer <= 0f) isDetouring = false;
             }
 
-            // 3. Di chuyển người đi bộ:
             _walkTimer += dt;
             Vector3 pos = transform.position;
 
-            // Bước ngang qua đường (trục X)
             pos.x += crossingDirection * walkingSpeed * dt;
 
-            // Xử lý dịch trái/phải (trục Z) khi đi vòng qua xe dừng
             if (_detourTimer > 0f)
             {
                 _detourTimer -= dt;
@@ -268,20 +238,17 @@ namespace TrafficJamSimulation
             else
             {
                 isDetouring = false;
-                // Sau khi đã vượt qua xe, dần dần trở lại đường đi ban đầu
                 if (Mathf.Abs(pos.z - _startZ) > 0.05f)
                 {
                     pos.z = Mathf.MoveTowards(pos.z, _startZ, detourSpeed * 0.4f * dt);
                 }
             }
 
-            // 4. Hiệu ứng nhấp nhô nhẹ mô phỏng nhịp bước chân
             float bobOffset = Mathf.Sin(_walkTimer * stepFrequency * Mathf.PI) * stepBobAmplitude;
             pos.y = _baseHeightY + Mathf.Abs(bobOffset);
 
             transform.position = pos;
 
-            // 5. Kiểm tra đã đến đích (bước qua mép đường bên kia)
             bool reached = (crossingDirection > 0 && pos.x >= targetX) ||
                            (crossingDirection < 0 && pos.x <= targetX);
 
@@ -295,21 +262,16 @@ namespace TrafficJamSimulation
             }
         }
 
-        /// <summary>
-        /// Bắn các tia Raycast hình quạt theo hướng nhìn của người đi bộ để phát hiện xe ô tô cắt ngang.
-        /// Đồng thời phân loại xe đang di chuyển hay xe đã dừng lại để người chủ động ứng xử bằng code logic.
-        /// </summary>
         private bool ScanForVehicles(out bool isStoppedCar, out GameObject detectedCar, out float hitDist)
         {
             isStoppedCar = false;
             detectedCar = null;
             hitDist = 50f;
 
-            Vector3 forwardDir = transform.forward; // Đã hướng về phía di chuyển (+X hoặc -X)
+            Vector3 forwardDir = transform.forward;
             Vector3 originCenter = transform.position;
-            originCenter.y = 0.6f; // Tầm cao thân xe ô tô
+            originCenter.y = 0.6f;
 
-            // 5 tia quét hình quạt: giữa, ±10 độ, ±20 độ để bao quát toàn diện góc nhìn phía trước
             float[] angles = new float[] { 0f, 10f, -10f, 20f, -20f };
 
             for (int i = 0; i < angles.Length; i++)
@@ -333,7 +295,6 @@ namespace TrafficJamSimulation
 
             if (detectedCar != null)
             {
-                // Kiểm tra vận tốc di chuyển của xe phát hiện được
                 float carSpeed = 0f;
                 var carAgent = detectedCar.GetComponentInParent<AIFVehicleAgent>();
                 if (carAgent != null)
@@ -346,7 +307,6 @@ namespace TrafficJamSimulation
                     if (rb != null) carSpeed = rb.linearVelocity.magnitude;
                 }
 
-                // Nếu xe chạy rất chậm hoặc đã dừng hẳn (< 0.5 m/s)
                 if (carSpeed < 0.5f)
                 {
                     isStoppedCar = true;
@@ -373,9 +333,6 @@ namespace TrafficJamSimulation
             }
         }
 
-        /// <summary>
-        /// Kích hoạt trạng thái bị đâm va: tô đỏ rực và đứng yên trong vài giây
-        /// </summary>
         public void TriggerCrash(float pauseDuration = 3.5f, GameObject vehicle = null)
         {
             isInCrashState = true;
@@ -388,9 +345,6 @@ namespace TrafficJamSimulation
             ApplyColor(crashColor);
         }
 
-        /// <summary>
-        /// Đổi màu trang phục của khối người đi bộ
-        /// </summary>
         public void SetRandomColor(Color bodyColor)
         {
             _normalColor = bodyColor;
@@ -424,18 +378,14 @@ namespace TrafficJamSimulation
 
         private void HandleVehicleCollision(GameObject other)
         {
-            // Nếu đang trong thời gian ân hạn sau va chạm: bỏ qua kích hoạt lại va chạm tránh dừng lặp vô thời hạn
             if (_postCrashGraceTimer > 0f) return;
 
             if (other.CompareTag("Vehicle") || other.GetComponentInParent<AIFVehicleAgent>() != null)
             {
-                // Vô hiệu hóa va chạm vật lý giữa người và xe ngay lập tức để không bị kéo/kẹt
                 IgnoreCollisionWithVehicle(other, crashPauseDuration + 3.0f);
 
-                // Bị xe đâm trúng: Người đổi đỏ rực và dừng lại
                 TriggerCrash(crashPauseDuration, other);
 
-                // Đồng thời kích hoạt xe đổi màu đỏ rực và dừng lại
                 var carVis = other.GetComponentInParent<CarCollisionVisualizer>();
                 if (carVis != null)
                 {
@@ -450,9 +400,6 @@ namespace TrafficJamSimulation
             }
         }
 
-        /// <summary>
-        /// Tạm thời bỏ qua va chạm vật lý giữa người và xe để hoàn toàn triệt tiêu lực kéo/đẩy vật lý
-        /// </summary>
         public void IgnoreCollisionWithVehicle(GameObject vehicleObj, float duration)
         {
             if (vehicleObj == null) return;

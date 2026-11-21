@@ -10,12 +10,6 @@ namespace TrafficJamSimulation
         Hazard = 3
     }
 
-    /// <summary>
-    /// Điều khiển 2 đèn hậu ở đuôi xe:
-    /// - Phanh: sáng đèn màu đỏ.
-    /// - Xi nhan (trái/phải/khẩn cấp): nhấp nháy màu vàng.
-    /// - Bình thường: đèn đỏ dịu (hoặc tắt).
-    /// </summary>
     [DisallowMultipleComponent]
     public class CarLightsController : MonoBehaviour
     {
@@ -117,7 +111,6 @@ namespace TrafficJamSimulation
 
         private void Update()
         {
-            // Pha nhấp nháy cho đèn xi nhan (50% ON, 50% OFF)
             bool blinkOn = (Mathf.Repeat(Time.time * blinkRate, 1f) < 0.5f);
 
             Color leftColor = CalculateLightColor(isLeft: true, blinkOn);
@@ -139,27 +132,24 @@ namespace TrafficJamSimulation
                 hasSignal = (currentSignal == TurnSignal.Right || currentSignal == TurnSignal.Hazard);
             }
 
-            // Nếu bên này đang xi nhan
             if (hasSignal)
             {
                 if (blinkOn)
                 {
-                    return turnSignalColor; // Vàng khi trong pha sáng
+                    return turnSignalColor;
                 }
                 else
                 {
-                    // Khi xi nhan ở pha tắt: nếu đang phanh thì hiện đỏ, không phanh thì tắt
                     return isBraking ? brakeColor : offColor;
                 }
             }
 
-            // Nếu không xi nhan ở bên này:
             if (isBraking)
             {
-                return brakeColor; // Đỏ rực khi phanh
+                return brakeColor;
             }
 
-            return normalTailColor; // Đỏ sẫm mặc định khi chạy
+            return normalTailColor;
         }
 
         private void ApplyColor(Renderer rend, MaterialPropertyBlock propBlock, Color col)

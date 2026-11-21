@@ -4,26 +4,19 @@ import torch.optim as optim
 import numpy as np
 import os
 
-# Cố định random seed để kết quả tái lập được 100%
 torch.manual_seed(42)
 np.random.seed(42)
 
-# ==============================================================================
-# 1. ĐỊNH NGHĨA KIẾN TRÚC MẠNG NƠ-RON PHÂN TẦNG ĐA NHIỆM (HIERARCHICAL POLICY)
-# ==============================================================================
 class TrafficHierarchicalPolicy(nn.Module):
     def __init__(self, input_dim=9, hidden_dim=64, num_classes=5, control_dim=2):
         super().__init__()
-        # Lớp trích xuất đặc trưng chung (Shared Feature Extractor)
         self.shared = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU()
         )
-        # Tầng 1: Nhánh phân loại ra quyết định hành vi bậc cao (5 lớp DrivingMode)
         self.decision_head = nn.Linear(hidden_dim, num_classes)
-        # Tầng 2: Nhánh điều khiển liên tục sinh Gia tốc & Góc lái
         self.control_head = nn.Sequential(
             nn.Linear(hidden_dim, control_dim),
             nn.Tanh()
@@ -33,7 +26,6 @@ class TrafficHierarchicalPolicy(nn.Module):
         features = self.shared(x)
         logits = self.decision_head(features)
         control = self.control_head(features)
-        # Ghép thành 1 Tensor đầu ra [batch, 7] để Unity Sentis suy luận trong 1 forward pass
         return torch.cat([logits, control], dim=-1)
 
 def main():
@@ -41,9 +33,6 @@ def main():
     print("BẮT ĐẦU HUẤN LUYỆN MÔ HÌNH HỌC SÂU ĐIỀU KHIỂN XE (TRAFFIC AIF AGENT)")
     print("=" * 60)
 
-    # ==============================================================================
-    # 2. SINH TẬP DỮ LIỆU HUẤN LUYỆN (120,000 TÌNH HUỐNG GIAO THÔNG ĐA BIẾN)
-    # ==============================================================================
     N = 120000
     speed = np.random.uniform(0.0, 1.0, N)
     gap = np.random.uniform(0.02, 1.0, N)
@@ -57,7 +46,6 @@ def main():
 
     X = np.stack([speed, gap, rel_speed, speed_error, road_offset, side_balance, leader_braking, pedestrian, density], axis=1).astype(np.float32)
 
-    # Gán nhãn quyết định Tầng 1 (0: FreeFlow, 1: CarFollowing, 2: ActiveEvasion, 3: SafeYielding, 4: EmergencyShield)
     decision = np.zeros(N, dtype=np.int64)
     emergency_mask = (gap < 0.08) | ((gap < 0.15) & (rel_speed < -0.4))
     decision[emergency_mask] = 4
@@ -74,7 +62,6 @@ def main():
     free_mask = (~emergency_mask) & (~yield_mask) & (~evasion_mask) & (~follow_mask)
     decision[free_mask] = 0
 
-    # Mục tiêu điều khiển liên tục Tầng 2 [Gia tốc, Góc lái]
     target_accel = np.zeros(N, dtype=np.float32)
     target_steer = -0.35 * road_offset
 
@@ -94,9 +81,6 @@ def main():
 
     Y_control = np.stack([target_accel, target_steer], axis=1).astype(np.float32)
 
-    # ==============================================================================
-    # 3. HUẤN LUYỆN MẠNG NƠ-RON
-    # ==============================================================================
     model = TrafficHierarchicalPolicy(input_dim=9, hidden_dim=64, num_classes=5, control_dim=2)
     criterion_cls = nn.CrossEntropyLoss()
     criterion_reg = nn.MSELoss()
@@ -121,13 +105,13 @@ def main():
             out = model(bx)
             logits = out[:, :5]
             controls = out[:, 5:]
-            
+
             loss_cls = criterion_cls(logits, b_cls)
             loss_reg = criterion_reg(controls, b_reg)
             loss = loss_cls + 2.0 * loss_reg
             loss.backward()
             optimizer.step()
-            
+
             total_cls_loss += loss_cls.item()
             total_reg_loss += loss_reg.item()
             preds = torch.argmax(logits, dim=-1)
@@ -137,9 +121,6 @@ def main():
         acc = correct / total_samples * 100.0
         print(f"Epoch {epoch+1:02d}/{epochs} - Độ chính xác phân loại: {acc:.2f}% | Cls Loss: {total_cls_loss/len(loader):.4f} | Reg Loss: {total_reg_loss/len(loader):.4f}")
 
-    # ==============================================================================
-    # 4. XUẤT RA TỆP ONNX CHO UNITY SENTIS
-    # ==============================================================================
     model.eval()
     dummy_input = torch.randn(1, 9, dtype=torch.float32)
     output_dir = os.path.join(os.path.dirname(__file__), "Assets", "Models")

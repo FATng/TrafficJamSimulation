@@ -22,26 +22,21 @@ namespace TrafficJamSimulation.Editor
         {
             Debug.Log("[EnvironmentSetup] Bắt đầu tạo CarAgent Prefab...");
 
-            // 1. Đảm bảo tag Vehicle tồn tại
             EnsureTagExists("Vehicle");
 
-            // 2. Đảm bảo thư mục Assets/Prefabs tồn tại
             if (!AssetDatabase.IsValidFolder(PrefabDirectory))
             {
                 AssetDatabase.CreateFolder("Assets", "Prefabs");
             }
 
-            // 3. Tạo Cube cơ bản
             GameObject carAgent = GameObject.CreatePrimitive(PrimitiveType.Cube);
             carAgent.name = "CarAgent";
             carAgent.tag = "Vehicle";
             carAgent.transform.position = Vector3.zero;
             carAgent.transform.rotation = Quaternion.identity;
 
-            // 4. Chỉnh Scale: X: 1.8, Y: 1, Z: 4
             carAgent.transform.localScale = new Vector3(1.8f, 1f, 4f);
 
-            // 5. Thêm Rigidbody với Mass = 1500, Freeze Position Y và Freeze toàn bộ Rotation (ngăn xe bay lên trời hoặc quay ngược chiều)
             Rigidbody rb = carAgent.GetComponent<Rigidbody>();
             if (rb == null) rb = carAgent.AddComponent<Rigidbody>();
             rb.mass = 1500f;
@@ -50,7 +45,6 @@ namespace TrafficJamSimulation.Editor
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             rb.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationY | RigidbodyConstraints.FreezeRotationZ;
 
-            // 6. Thêm script AIFVehicleAgent
             AIFVehicleAgent aifAgent = carAgent.AddComponent<AIFVehicleAgent>();
             aifAgent.roadWidth = 10f;
             aifAgent.maxSafeRoadX = 4.1f;
@@ -60,7 +54,6 @@ namespace TrafficJamSimulation.Editor
             aifAgent.curbSeparationSpeed = 2.5f;
             aifAgent.crashBrakeDecel = 12.0f;
 
-            // 7. Tạo vật liệu đèn hậu (TailLightMaterial) nếu chưa có
             Material tailMat = AssetDatabase.LoadAssetAtPath<Material>(TailLightMaterialPath);
             if (tailMat == null)
             {
@@ -76,8 +69,6 @@ namespace TrafficJamSimulation.Editor
                 AssetDatabase.SaveAssets();
             }
 
-            // 8. Tạo 2 đèn đuôi xe (Left & Right Tail Lights)
-            // Đèn trái (RearLight_Left)
             GameObject leftLightObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
             leftLightObj.name = "RearLight_Left";
             Object.DestroyImmediate(leftLightObj.GetComponent<Collider>());
@@ -88,7 +79,6 @@ namespace TrafficJamSimulation.Editor
             var leftRenderer = leftLightObj.GetComponent<Renderer>();
             if (leftRenderer != null && tailMat != null) leftRenderer.sharedMaterial = tailMat;
 
-            // Đèn phải (RearLight_Right)
             GameObject rightLightObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
             rightLightObj.name = "RearLight_Right";
             Object.DestroyImmediate(rightLightObj.GetComponent<Collider>());
@@ -99,12 +89,10 @@ namespace TrafficJamSimulation.Editor
             var rightRenderer = rightLightObj.GetComponent<Renderer>();
             if (rightRenderer != null && tailMat != null) rightRenderer.sharedMaterial = tailMat;
 
-            // 9. Thêm CarLightsController để điều khiển đèn phanh và xi nhan
             CarLightsController lightsController = carAgent.AddComponent<CarLightsController>();
             lightsController.leftTailLightRenderer = leftRenderer;
             lightsController.rightTailLightRenderer = rightRenderer;
 
-            // Liên kết lightsController vào AIFVehicleAgent
             SerializedObject aifSo = new SerializedObject(aifAgent);
             SerializedProperty lightsProp = aifSo.FindProperty("lightsController");
             if (lightsProp != null)
@@ -113,7 +101,6 @@ namespace TrafficJamSimulation.Editor
                 aifSo.ApplyModifiedProperties();
             }
 
-            // Gán vật liệu thân xe CarBodyMaterial
             Material bodyMat = AssetDatabase.LoadAssetAtPath<Material>(CarBodyMaterialPath);
             if (bodyMat != null)
             {
@@ -121,7 +108,6 @@ namespace TrafficJamSimulation.Editor
                 if (bodyRenderer != null) bodyRenderer.sharedMaterial = bodyMat;
             }
 
-            // 10. Thêm CarCollisionVisualizer để khi va chạm 2 xe cùng chuyển sang màu đỏ, va vào rào chắn cũng chuyển sang màu đỏ
             CarCollisionVisualizer collisionVis = carAgent.AddComponent<CarCollisionVisualizer>();
             collisionVis.bodyRenderer = carAgent.GetComponent<Renderer>();
             collisionVis.randomizeNormalColor = true;
@@ -135,7 +121,6 @@ namespace TrafficJamSimulation.Editor
                 aifSo.ApplyModifiedProperties();
             }
 
-            // 11. Gán file ONNX model nếu có
             var modelAsset = AssetDatabase.LoadAssetAtPath<Unity.InferenceEngine.ModelAsset>(OnnxModelPath);
             if (modelAsset != null)
             {
@@ -153,10 +138,8 @@ namespace TrafficJamSimulation.Editor
                 Debug.LogWarning($"[EnvironmentSetup] Chưa tìm thấy file '{OnnxModelPath}'. Prefab được tạo với onnxModelAsset để trống.");
             }
 
-            // 8. Lưu thành Prefab trong Assets/Prefabs/
             PrefabUtility.SaveAsPrefabAsset(carAgent, CarAgentPrefabPath);
 
-            // 9. Xóa GameObject tạm trong Hierarchy
             Object.DestroyImmediate(carAgent);
 
             AssetDatabase.SaveAssets();
@@ -169,14 +152,11 @@ namespace TrafficJamSimulation.Editor
         {
             Debug.Log("[EnvironmentSetup] Bắt đầu thiết lập môi trường đường sá...");
 
-            // 1. Đảm bảo Tag 'Vehicle' và 'Pedestrian' đã được đăng ký
             EnsureTagExists("Vehicle");
             EnsureTagExists("Pedestrian");
 
-            // 2. Tạo hoặc mở Scene
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
-            // 3. Tạo vật liệu mặt đường (Asphalt Road Material)
             Material roadMat = AssetDatabase.LoadAssetAtPath<Material>(RoadMaterialPath);
             if (roadMat == null)
             {
@@ -184,17 +164,12 @@ namespace TrafficJamSimulation.Editor
                 roadMat = new Material(shader)
                 {
                     name = "RoadMaterial",
-                    color = new Color(0.18f, 0.18f, 0.18f, 1f) // Màu nhựa đường tối
+                    color = new Color(0.18f, 0.18f, 0.18f, 1f)
                 };
                 AssetDatabase.CreateAsset(roadMat, RoadMaterialPath);
                 AssetDatabase.SaveAssets();
             }
 
-            // 4. Bước 1 theo hướng dẫn: Tạo mặt đường Road (Plane)
-            // Trong cửa sổ Hierarchy -> 3D Object -> Plane
-            // Đặt tên là Road
-            // Position: (0, 0, 250)
-            // Scale: (1, 1, 50) -> tạo đoạn đường dài 500m theo trục Z
             GameObject road = GameObject.CreatePrimitive(PrimitiveType.Plane);
             road.name = "Road";
             road.transform.position = new Vector3(0f, 0f, 250f);
@@ -207,7 +182,6 @@ namespace TrafficJamSimulation.Editor
                 roadRenderer.sharedMaterial = roadMat;
             }
 
-            // 4b. Tạo rào chắn 2 bên đường (Road Guardrails) ngăn tuyệt đối xe trượt rơi khỏi đường
             GameObject leftGuardrail = GameObject.CreatePrimitive(PrimitiveType.Cube);
             leftGuardrail.name = "LeftGuardrail";
             leftGuardrail.transform.position = new Vector3(-5.15f, 0.5f, 250f);
@@ -222,7 +196,6 @@ namespace TrafficJamSimulation.Editor
             var rightRend = rightGuardrail.GetComponent<Renderer>();
             if (rightRend != null && roadMat != null) rightRend.sharedMaterial = roadMat;
 
-            // 5. Bước 3 & Bước 5: Tạo TrafficSystem và gắn TrafficFieldManager, TrafficSpawner
             GameObject trafficSystem = new GameObject("TrafficSystem");
             trafficSystem.transform.position = Vector3.zero;
             trafficSystem.transform.rotation = Quaternion.identity;
@@ -245,7 +218,6 @@ namespace TrafficJamSimulation.Editor
             spawner.spawnHeightY = 0.5f;
             spawner.checkPhysicsOverlap = true;
 
-            // 5b. Thêm PedestrianSpawner để mô phỏng người qua đường
             var pedSpawner = trafficSystem.AddComponent<PedestrianSpawner>();
             var pedPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PedestrianPrefabPath);
             if (pedPrefab == null)
@@ -259,7 +231,6 @@ namespace TrafficJamSimulation.Editor
             pedSpawner.minSpawnZ = 40f;
             pedSpawner.maxSpawnZ = 450f;
 
-            // 6. Bước 5: Căn chỉnh Camera chính để quan sát bao quát từ trên cao xuống
             Camera mainCam = Camera.main;
             if (mainCam != null)
             {
@@ -268,11 +239,9 @@ namespace TrafficJamSimulation.Editor
                 mainCam.farClipPlane = 1000f;
             }
 
-            // 7. Lưu Scene
             EditorSceneManager.SaveScene(scene, ScenePath);
             Debug.Log($"[EnvironmentSetup] Đã lưu Scene tại: {ScenePath}");
 
-            // Đăng ký Scene vào Build Settings nếu chưa có
             AddSceneToBuildSettings(ScenePath);
 
             AssetDatabase.Refresh();
@@ -290,7 +259,6 @@ namespace TrafficJamSimulation.Editor
                 AssetDatabase.CreateFolder("Assets", "Prefabs");
             }
 
-            // Tạo khối chữ nhật Cube duy nhất
             GameObject pedObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
             pedObj.name = "Pedestrian";
             pedObj.tag = "Pedestrian";
@@ -298,26 +266,22 @@ namespace TrafficJamSimulation.Editor
             pedObj.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
             pedObj.transform.localScale = new Vector3(0.6f, 1.8f, 0.6f);
 
-            // Cấu hình BoxCollider
             BoxCollider col = pedObj.GetComponent<BoxCollider>();
             if (col == null) col = pedObj.AddComponent<BoxCollider>();
             col.center = Vector3.zero;
             col.size = Vector3.one;
 
-            // Cấu hình Rigidbody
             Rigidbody rb = pedObj.GetComponent<Rigidbody>();
             if (rb == null) rb = pedObj.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
 
-            // Cấu hình PedestrianAgent
             PedestrianAgent agent = pedObj.AddComponent<PedestrianAgent>();
             agent.walkingSpeed = 1.4f;
             agent.roadWidth = 10f;
             agent.stepFrequency = 4.0f;
             agent.stepBobAmplitude = 0.04f;
 
-            // Vật liệu PedestrianMaterial
             Material pedMat = AssetDatabase.LoadAssetAtPath<Material>(PedestrianMaterialPath);
             if (pedMat == null)
             {

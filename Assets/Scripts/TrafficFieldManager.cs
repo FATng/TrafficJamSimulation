@@ -33,7 +33,6 @@ public class TrafficFieldManager : MonoBehaviour
 
     void LateUpdate()
     {
-        // Phục hồi và làm mượt mật độ theo thời gian
         for (int i = 0; i < cellCount; i++)
         {
             densityMap[i] = Mathf.MoveTowards(densityMap[i], 0f, Time.deltaTime * 5f);

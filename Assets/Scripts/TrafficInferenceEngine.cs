@@ -4,10 +4,6 @@ using Unity.InferenceEngine;
 
 namespace TrafficJamSimulation
 {
-    /// <summary>
-    /// Manages the Inference Engine (Sentis) runtime for neural network models (.onnx)
-    /// predicting vehicle driving policies in traffic jams.
-    /// </summary>
     public class TrafficInferenceEngine : MonoBehaviour
     {
         [Header("Model Configuration")]
@@ -45,10 +41,8 @@ namespace TrafficJamSimulation
 
             try
             {
-                // 1. Load runtime model from ONNX asset
                 _runtimeModel = ModelLoader.Load(modelAsset);
 
-                // 2. Instantiate inference worker
                 _worker = new Worker(_runtimeModel, backendType);
                 Debug.Log($"[TrafficInferenceEngine] Inference Engine initialized successfully using {backendType}.");
             }
@@ -59,16 +53,10 @@ namespace TrafficJamSimulation
             }
         }
 
-        /// <summary>
-        /// Runs neural network inference for a given vehicle's state.
-        /// Inputs: [speed, distanceToLeader, relativeVelocity]
-        /// Output: target acceleration (m/s^2)
-        /// </summary>
         public float PredictAcceleration(float speed, float gap, float relSpeed)
         {
             if (!IsModelReady) return 0f;
 
-            // Normalized input features [1, 3]
             float normSpeed = Mathf.Clamp01(speed / maxSpeedNorm);
             float normGap = Mathf.Clamp01(gap / maxGapNorm);
             float normRelSpeed = Mathf.Clamp(relSpeed / maxRelSpeedNorm, -1f, 1f);
@@ -79,10 +67,8 @@ namespace TrafficJamSimulation
 
             try
             {
-                // Schedule inference
                 _worker.Schedule(inputTensor);
 
-                // Retrieve output and cast to Tensor<float>
                 var outputTensor = _worker.PeekOutput() as Tensor<float>;
                 if (outputTensor != null)
                 {

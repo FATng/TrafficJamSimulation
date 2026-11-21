@@ -3,12 +3,6 @@ using UnityEngine;
 
 namespace TrafficJamSimulation
 {
-    /// <summary>
-    /// Quản lý việc sinh người đi bộ qua đường (Pedestrian Spawner):
-    /// - Tự động sinh người đi bộ định kỳ tại các vị trí ngẫu nhiên dọc theo cung đường.
-    /// - Hỗ trợ gọi hàm sinh người qua đường theo yêu cầu hoặc vị trí chỉ định.
-    /// - Quản lý hướng đi (Trái sang Phải hoặc Phải sang Trái), tốc độ và màu sắc trang phục.
-    /// </summary>
     public class PedestrianSpawner : MonoBehaviour
     {
         [Header("Pedestrian Prefab")]
@@ -60,22 +54,20 @@ namespace TrafficJamSimulation
         private List<PedestrianAgent> _activePedestrians = new List<PedestrianAgent>();
         private Transform _pedestrianContainer;
 
-        // Bảng màu trang phục người đi bộ
         private static readonly Color[] ClothingPalette = new Color[]
         {
-            new Color(0.95f, 0.75f, 0.10f), // Vàng cam ấm
-            new Color(0.20f, 0.55f, 0.90f), // Xanh dương
-            new Color(0.15f, 0.75f, 0.45f), // Xanh lá cây
-            new Color(0.85f, 0.30f, 0.20f), // Cam đỏ
-            new Color(0.60f, 0.25f, 0.85f), // Tím thạch anh
-            new Color(0.20f, 0.80f, 0.85f), // Xanh ngọc
-            new Color(0.90f, 0.90f, 0.90f), // Trắng xám
-            new Color(0.35f, 0.35f, 0.40f)  // Xám đậm
+            new Color(0.95f, 0.75f, 0.10f),
+            new Color(0.20f, 0.55f, 0.90f),
+            new Color(0.15f, 0.75f, 0.45f),
+            new Color(0.85f, 0.30f, 0.20f),
+            new Color(0.60f, 0.25f, 0.85f),
+            new Color(0.20f, 0.80f, 0.85f),
+            new Color(0.90f, 0.90f, 0.90f),
+            new Color(0.35f, 0.35f, 0.40f)
         };
 
         private void Awake()
         {
-            // Tạo GameObject container để gom gọn Hierarchy
             GameObject container = new GameObject("PedestrianContainer");
             container.transform.SetParent(transform);
             _pedestrianContainer = container.transform;
@@ -88,7 +80,6 @@ namespace TrafficJamSimulation
 
         private void Update()
         {
-            // Dọn dẹp danh sách các người đã hoàn thành qua đường
             _activePedestrians.RemoveAll(p => p == null || p.HasCompletedCrossing);
 
             if (!autoSpawn) return;
@@ -109,10 +100,6 @@ namespace TrafficJamSimulation
             _nextSpawnTimer = Random.Range(minSpawnInterval, maxSpawnInterval);
         }
 
-        /// <summary>
-        /// Hàm sinh ngẫu nhiên một người đi bộ qua đường.
-        /// </summary>
-        /// <returns>GameObject của người đi bộ vừa được sinh</returns>
         public GameObject SpawnPedestrian()
         {
             if (pedestrianPrefab == null)
@@ -121,7 +108,6 @@ namespace TrafficJamSimulation
                 return null;
             }
 
-            // Chọn vị trí Z: hoặc là tại vạch kẻ cố định, hoặc ngẫu nhiên dọc đường
             float spawnZ;
             if (designatedCrossings != null && designatedCrossings.Length > 0 && Random.value < designatedCrossingBias)
             {
@@ -133,20 +119,12 @@ namespace TrafficJamSimulation
                 spawnZ = Random.Range(minSpawnZ, maxSpawnZ);
             }
 
-            // Hướng đi: ngẫu nhiên từ trái sang phải hoặc từ phải sang trái
             bool fromLeftToRight = (Random.value > 0.5f);
             float speed = Random.Range(minWalkingSpeed, maxWalkingSpeed);
 
             return SpawnPedestrianAt(spawnZ, fromLeftToRight, speed);
         }
 
-        /// <summary>
-        /// Hàm sinh người đi bộ tại vị trí Z chỉ định với hướng và tốc độ tùy chọn.
-        /// </summary>
-        /// <param name="zPosition">Vị trí theo trục Z của đường</param>
-        /// <param name="fromLeftToRight">True nếu đi từ lề trái (+X) sang lề phải, False nếu ngược lại</param>
-        /// <param name="walkingSpeed">Tốc độ di chuyển của người qua đường (m/s)</param>
-        /// <returns>GameObject của người đi bộ vừa được sinh</returns>
         public GameObject SpawnPedestrianAt(float zPosition, bool fromLeftToRight = true, float walkingSpeed = 1.4f)
         {
             if (pedestrianPrefab == null)
@@ -157,7 +135,6 @@ namespace TrafficJamSimulation
 
             float halfRoad = roadWidth * 0.5f;
             int direction = fromLeftToRight ? 1 : -1;
-            // Xuất phát cách mép đường 0.8m
             float startX = fromLeftToRight ? (-halfRoad - 0.8f) : (halfRoad + 0.8f);
 
             Vector3 spawnPos = new Vector3(startX, spawnHeightY, zPosition);
@@ -174,7 +151,6 @@ namespace TrafficJamSimulation
 
             agent.Initialize(spawnPos, direction, walkingSpeed, roadWidth);
 
-            // Gán màu ngẫu nhiên cho trang phục
             Color randomClothing = ClothingPalette[Random.Range(0, ClothingPalette.Length)];
             agent.SetRandomColor(randomClothing);
 
@@ -183,9 +159,6 @@ namespace TrafficJamSimulation
             return pedObj;
         }
 
-        /// <summary>
-        /// Dọn dẹp toàn bộ người đi bộ đang có trên đường
-        /// </summary>
         public void ClearAllPedestrians()
         {
             foreach (var ped in _activePedestrians)
@@ -197,7 +170,6 @@ namespace TrafficJamSimulation
 
         private void OnDrawGizmosSelected()
         {
-            // Vẽ các vị trí vạch kẻ qua đường trong Scene view
             if (designatedCrossings == null) return;
             Gizmos.color = Color.yellow;
             foreach (var z in designatedCrossings)
